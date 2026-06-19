@@ -3,1256 +3,1308 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flat 3D Extrusion Studio</title>
-    <!-- Tailwind CSS for high fidelity modern UI -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Font Awesome Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+    <title>Dash</title>
     <style>
-        /* Modern custom scrollbar styling */
-        ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: sans-serif; }
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
+        #svg-editor { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 5; background-color: #111111; touch-action: none; cursor: crosshair; }
+        #instructions {
+            position: absolute; top: 10px; left: 10px; color: white; background: rgba(0,0,0,0.85);
+            padding: 15px 20px; border-radius: 8px; pointer-events: none; z-index: 10; max-width: 320px;
         }
-        ::-webkit-scrollbar-track {
-            background: #0f172a;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #334155;
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #475569;
-        }
-        
-        /* Grid system background for transparency preview */
-        .bg-checkerboard {
-            background-color: #1e293b;
-            background-image: 
-                linear-gradient(45deg, #0f172a 25%, transparent 25%), 
-                linear-gradient(-45deg, #0f172a 25%, transparent 25%), 
-                linear-gradient(45deg, transparent 75%, #0f172a 75%), 
-                linear-gradient(-45deg, transparent 75%, #0f172a 75%);
-            background-size: 20px 20px;
-            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
-        }
-        
-        /* Accordion transition utility */
-        .accordion-content {
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.3s ease-out, padding 0.3s ease;
-        }
-        .accordion-content.open {
-            max-height: 1000px;
-            padding-bottom: 1.5rem;
-        }
+        #instructions h3 { margin-top: 0; color: #ffcc00; margin-bottom: 8px; }
+        #instructions p { margin: 5px 0; font-size: 13px; line-height: 1.5; }
+        .drag-mode { cursor: move !important; }
+        .pan-mode { cursor: grabbing !important; }
     </style>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+                "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js",
+                "polygon-clipping": "https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.3/+esm"
+            }
+        }
+    </script>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased overflow-x-hidden">
+<body>
+    <input type="file" id="svg-upload-input" accept=".svg" style="display: none;" />
 
-    <!-- Top Navigation Header -->
-    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-40 px-6 py-4 flex items-center justify-between">
-        <div class="flex items-center space-x-3">
-            <div class="bg-gradient-to-tr from-indigo-500 to-pink-500 p-2.5 rounded-xl shadow-lg shadow-indigo-500/10">
-                <i class="fa-solid fa-cube text-xl text-white"></i>
-            </div>
-            <div>
-                <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
-                    3D Flat Extrusion Studio
-                </h1>
-                <p class="text-xs text-slate-400 font-medium">Vector-to-Flat 3D Renderer</p>
-            </div>
-        </div>
-        
-        <!-- Status Indicator / Vertex Counter -->
-        <div class="hidden sm:flex items-center space-x-6 text-xs text-slate-400">
-            <div class="flex flex-col items-end">
-                <span>Vertices</span>
-                <span id="stat-vertices" class="font-mono text-indigo-400 font-semibold">0</span>
-            </div>
-            <div class="h-6 w-[1px] bg-slate-800"></div>
-            <div class="flex flex-col items-end">
-                <span>Polygons</span>
-                <span id="stat-polygons" class="font-mono text-pink-400 font-semibold">0</span>
-            </div>
-        </div>
-    </header>
+    <div id="instructions">
+        <h3>Advanced Dash Controls</h3>
+        <p>1. <b>🌟 Import System</b>: Perfectly supports external SVG import and 3D text generation!</p>
+        <p>2. <b>🌟 Visual Controls</b>: Freely adjust true line thickness, dynamically hide dots, and use Solid Back wireframes.</p>
+        <p>3. <b>🌟 Export Image</b>: Use Folder 8 to export a high-res JPG perfectly matching your screen.</p>
+    </div>
 
-    <!-- Main Workspace Container -->
-    <main class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+    <svg id="svg-editor" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <pattern id="gridPattern" width="20" height="20" patternUnits="userSpaceOnUse">
+                <path id="grid-path" d="M 20 0 L 0 0 0 20" fill="none" stroke="#2a2a2a" stroke-width="1" />
+            </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#gridPattern)" />
+        <g id="svg-transform">
+            <path id="base-shapes" fill="#44aa88" fill-rule="evenodd" stroke="#ffffff" stroke-linejoin="round" />
+            <path id="active-shape" fill="#ffcc00" fill-opacity="0.3" stroke="#ffcc00" stroke-linejoin="round" />
+            <path id="drawing-line" stroke="#ffffff" fill="none" stroke-dasharray="4 2" />
+            <g id="anchor-dots"></g>
+        </g>
+    </svg>
+
+    <div id="canvas-container"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+        import { FontLoader } from 'three/addons/loaders/FontLoader.js'; 
+        import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+        import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
+        import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+        import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+        import GUI from 'lil-gui';
+        import polygonClipping from 'polygon-clipping';
+
+        const svgEditor = document.getElementById('svg-editor');
+        const svgTransform = document.getElementById('svg-transform');
+        const gridPattern = document.getElementById('gridPattern');
+        const gridPath = document.getElementById('grid-path');
+        const baseShapesPath = document.getElementById('base-shapes');
+        const activeShapePath = document.getElementById('active-shape');
+        const drawingLinePath = document.getElementById('drawing-line');
+        const anchorDotsGroup = document.getElementById('anchor-dots');
+        const instructionsDiv = document.getElementById('instructions');
+        const container = document.getElementById('canvas-container');
+
+        const SCALE = 20;
+        const polyClip = polygonClipping.default || polygonClipping; 
+
+        let view2D = { panX: 0, panY: 0, zoom: 1.0 };
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111111); 
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 0, 30);
+
+        // Enable preserveDrawingBuffer to allow screenshot captures
+        const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.enableRotate = false;
+
+        let generated3DGroup = new THREE.Group();
+        scene.add(generated3DGroup);
+
+        let rawAnchors = []; 
+        let basePoly = [];   
+        let history = [];    
+        let draggingIndex = -1; 
+        let draggingBasePolyIndex = null; 
+
+        const raycaster = new THREE.Raycaster();
+        const mouse2D = new THREE.Vector2(-9999, -9999);
+        let interactiveDotsArray = [];
+        let globalStructuralEdges = []; 
+        let interactionLinesMesh = null;
+        let invisiblePlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+
+        let mainCornerDotsCache = [];
+        let edgeInternalDotsCache = [];
+        let scatterDirsMain = [];
+        let scatterDirsEdge = [];
+        let currentScatterValue = 0; 
+
+        let finalTargetPoints = []; 
+        let centralPoint = new THREE.Vector3(0,0,0);
+        let growthDotsMesh = null; 
+        let growthData = []; 
+        let meshOpacity = 0.0; 
+        let growthGroup = new THREE.Group(); 
+        let growthStartTime = 0; 
+        scene.add(growthGroup);
+
+        const params = {
+            uploadSVG: () => {
+                if (params.generate3D !== '2D SVG Mode') return alert("Please switch back to '2D SVG Mode' before importing graphics!");
+                document.getElementById('svg-upload-input').click();
+            },
             
-            <!-- Left Side Control Panel (Sticky on Desktop) -->
-            <div class="lg:col-span-5 space-y-6 lg:sticky lg:top-24 max-h-[calc(100vh-140px)] overflow-y-auto pr-1">
+            textString: 'CASH',
+            addText: () => {
+                if (params.generate3D !== '2D SVG Mode') return alert("Please switch back to '2D SVG Mode' before importing text!");
+                if (params.textString.trim() === '') return alert("Please enter the text to generate!");
                 
-                <!-- CARD 1: File Upload & Presets -->
-                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
-                    <div class="flex items-center justify-between mb-4 cursor-pointer" onclick="toggleAccordion('acc-files')">
-                        <div class="flex items-center space-x-2.5">
-                            <i class="fa-solid fa-file-arrow-up text-indigo-400 text-sm"></i>
-                            <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-200">SVG Input & Presets</h2>
-                        </div>
-                        <i id="acc-files-icon" class="fa-solid fa-chevron-up text-slate-400 text-xs transition-transform duration-300"></i>
-                    </div>
+                const loader = new FontLoader();
+                // Replace URL with your custom JSON font path if needed
+                const fontUrl = 'https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json';
+
+                loader.load(fontUrl, function (font) {
+                    const shapes = font.generateShapes(params.textString, 100);
+                    if (!shapes || shapes.length === 0) return alert("Text conversion failed! Please check if the font file supports these characters.");
                     
-                    <div id="acc-files-content" class="accordion-content open space-y-4">
-                        <!-- Custom SVG Drag & Drop File Input -->
-                        <div id="dropzone" class="border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-xl p-4 text-center cursor-pointer transition-colors bg-slate-950/40 hover:bg-slate-800/20 group">
-                            <input type="file" id="fileInput" accept=".svg" class="hidden" />
-                            <i class="fa-solid fa-cloud-arrow-up text-2xl text-slate-400 group-hover:text-indigo-400 mb-2 transition-colors"></i>
-                            <p class="text-xs text-slate-300">Drag & drop your SVG file here, or <span class="text-indigo-400 font-semibold underline">browse</span></p>
-                            <p class="text-[10px] text-slate-500 mt-1">Paths will be combined & auto-extruded</p>
-                        </div>
-                        
-                        <!-- Built-in Preset Grid -->
-                        <div>
-                            <label class="block text-xs font-medium text-slate-400 mb-2.5">Or Choose a Preset Template</label>
-                            <div class="grid grid-cols-5 gap-2" id="preset-grid">
-                                <!-- Generated Dynamically -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                    let importedPolys = [];
+                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
-                <!-- CARD 2: Extrusion & Smoothing Settings -->
-                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
-                    <div class="flex items-center justify-between mb-4 cursor-pointer" onclick="toggleAccordion('acc-extrude')">
-                        <div class="flex items-center space-x-2.5">
-                            <i class="fa-solid fa-sliders text-indigo-400 text-sm"></i>
-                            <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-200">Extrude & Smoothing</h2>
-                        </div>
-                        <i id="acc-extrude-icon" class="fa-solid fa-chevron-up text-slate-400 text-xs transition-transform duration-300"></i>
-                    </div>
-                    
-                    <div id="acc-extrude-content" class="accordion-content open space-y-5">
-                        <!-- Extrusion Depth -->
-                        <div>
-                            <div class="flex justify-between mb-1.5">
-                                <label for="range-depth" class="text-xs font-medium text-slate-300">Extrusion Depth</label>
-                                <span id="val-depth" class="text-xs font-mono text-indigo-400">15.0</span>
-                            </div>
-                            <input type="range" id="range-depth" min="1" max="100" step="0.5" value="15" class="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-indigo-500">
-                        </div>
+                    shapes.forEach(shape => {
+                        let poly = [];
+                        let outer = shape.getPoints(3); 
+                        if (outer.length > 2) {
+                            outer.forEach(p => {
+                                minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+                                maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+                            });
+                            let outerRing = outer.map(p => [p.x, p.y]);
+                            if(outerRing[0][0] !== outerRing[outerRing.length-1][0] || outerRing[0][1] !== outerRing[outerRing.length-1][1]) outerRing.push([...outerRing[0]]);
+                            poly.push(outerRing);
 
-                        <!-- Edge Bevel Details / Smoothing Options -->
-                        <div class="bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-4">
-                            <div class="flex items-center justify-between">
-                                <div class="flex items-center space-x-2">
-                                    <label for="toggle-bevel" class="text-xs font-semibold text-slate-200">Enable Smooth Bevel</label>
-                                    <div class="relative inline-flex items-center cursor-pointer">
-                                        <input type="checkbox" id="toggle-bevel" class="sr-only peer" checked>
-                                        <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-                                    </div>
-                                </div>
-                            </div>
+                            if (shape.holes && shape.holes.length > 0) {
+                                shape.holes.forEach(hole => {
+                                    let holePts = hole.getPoints(3);
+                                    if (holePts.length > 2) {
+                                        holePts.forEach(p => {
+                                            minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+                                            maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+                                        });
+                                        let holeRing = holePts.map(p => [p.x, p.y]);
+                                        if(holeRing[0][0] !== holeRing[holeRing.length-1][0] || holeRing[0][1] !== holeRing[holeRing.length-1][1]) holeRing.push([...holeRing[0]]);
+                                        poly.push(holeRing);
+                                    }
+                                });
+                            }
+                            importedPolys.push(poly);
+                        }
+                    });
 
-                            <div id="bevel-controls" class="space-y-4 transition-opacity duration-200">
-                                <!-- Bevel Size -->
-                                <div>
-                                    <div class="flex justify-between mb-1.5">
-                                        <span class="text-[11px] text-slate-400">Bevel Size (Edge Thickness)</span>
-                                        <span id="val-bevel-size" class="text-xs font-mono text-indigo-400">1.2</span>
-                                    </div>
-                                    <input type="range" id="range-bevel-size" min="0.1" max="5.0" step="0.1" value="1.2" class="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
-                                </div>
+                    if (importedPolys.length === 0) return alert("Failed to convert text to polygons.");
 
-                                <!-- Bevel Thickness (Radius / Deepness) -->
-                                <div>
-                                    <div class="flex justify-between mb-1.5">
-                                        <span class="text-[11px] text-slate-400">Bevel Depth</span>
-                                        <span id="val-bevel-thick" class="text-xs font-mono text-indigo-400">1.2</span>
-                                    </div>
-                                    <input type="range" id="range-bevel-thick" min="0.1" max="5.0" step="0.1" value="1.2" class="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
-                                </div>
+                    const cx = (minX + maxX) / 2; const cy = (minY + maxY) / 2;
+                    const scaleFactor = 400 / (maxX - minX || 1); 
 
-                                <!-- Bevel Segments (Smoothing) -->
-                                <div>
-                                    <div class="flex justify-between mb-1.5">
-                                        <span class="text-[11px] text-slate-400">Bevel Smoothing Segments</span>
-                                        <span id="val-bevel-seg" class="text-xs font-mono text-indigo-400">4</span>
-                                    </div>
-                                    <input type="range" id="range-bevel-seg" min="1" max="12" step="1" value="4" class="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
-                                </div>
-                            </div>
-                        </div>
+                    // Fix inversion by mapping to positive Y axis
+                    importedPolys = importedPolys.map(poly => 
+                        poly.map(ring => ring.map(p => [(p[0] - cx) * scaleFactor, (p[1] - cy) * scaleFactor]))
+                    );
 
-                        <!-- SVG Curve Smoothing Settings -->
-                        <div>
-                            <div class="flex justify-between mb-1.5">
-                                <label for="range-curve-seg" class="text-xs font-medium text-slate-300">Fidelity / Curve Smoothing</label>
-                                <span id="val-curve-seg" class="text-xs font-mono text-indigo-400">20</span>
-                            </div>
-                            <input type="range" id="range-curve-seg" min="4" max="64" step="1" value="20" class="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-indigo-500">
-                            <p class="text-[10px] text-slate-500 mt-1">Smoothes curves in the source SVG path files</p>
-                        </div>
-                    </div>
-                </div>
+                    saveState(); rawAnchors = []; 
+                    if (basePoly.length === 0) { basePoly = importedPolys; } 
+                    else { try { basePoly = polyClip.union(basePoly, importedPolys); } catch(e) { basePoly = importedPolys; } }
 
-                <!-- CARD 3: Custom Styling & Color Codes -->
-                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
-                    <div class="flex items-center justify-between mb-4 cursor-pointer" onclick="toggleAccordion('acc-colors')">
-                        <div class="flex items-center space-x-2.5">
-                            <i class="fa-solid fa-palette text-indigo-400 text-sm"></i>
-                            <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-200">Shading & Color Hex Codes</h2>
-                        </div>
-                        <i id="acc-colors-icon" class="fa-solid fa-chevron-up text-slate-400 text-xs transition-transform duration-300"></i>
-                    </div>
-                    
-                    <div id="acc-colors-content" class="accordion-content open space-y-4">
-                        <!-- Shading Render Mode (Flat Illustration vs Faceted Shading) -->
-                        <div>
-                            <label class="block text-xs font-medium text-slate-400 mb-2.5">Visual Shading Mode</label>
-                            <div class="grid grid-cols-3 gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800">
-                                <button onclick="setRenderStyle('vector')" id="btn-style-vector" class="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white transition-colors duration-200">
-                                    Vector Flat
-                                </button>
-                                <button onclick="setRenderStyle('toon')" id="btn-style-toon" class="px-2.5 py-1.5 text-xs font-semibold rounded-lg text-slate-400 hover:text-slate-200 transition-colors duration-200">
-                                    Faceted Toon
-                                </button>
-                                <button onclick="setRenderStyle('silhouette')" id="btn-style-silhouette" class="px-2.5 py-1.5 text-xs font-semibold rounded-lg text-slate-400 hover:text-slate-200 transition-colors duration-200">
-                                    Pure Icon
-                                </button>
-                            </div>
-                        </div>
+                    view2D = { panX: 0, panY: 0, zoom: 1.0 }; applyView2D();
+                    alert(`✅ Text [${params.textString}] successfully converted to 3D contours!\nYou can drag its anchors freely, then click Extrude.`);
+                });
+            },
 
-                        <!-- Front Face Color Selection -->
-                        <div>
-                            <label class="block text-xs font-medium text-slate-300 mb-1.5">Front Face Color</label>
-                            <div class="flex items-center space-x-2">
-                                <div class="relative flex-grow">
-                                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500 font-mono text-xs">#</span>
-                                    <input type="text" id="frontColorHex" value="3b82f6" maxlength="6" class="w-full bg-slate-950 pl-7 pr-3 py-2 text-xs font-mono rounded-xl border border-slate-800 focus:border-indigo-500 focus:outline-none">
-                                </div>
-                                <input type="color" id="frontColorPicker" value="#3b82f6" class="w-10 h-8 rounded-xl bg-transparent cursor-pointer border-0 [color-scheme:dark]">
-                            </div>
-                        </div>
+            pointType: 'Sharp', 
+            gridSnap: true,
+            edgeDots: 5,     
 
-                        <!-- Side/Bevel Color Control -->
-                        <div>
-                            <div class="flex items-center justify-between mb-1.5">
-                                <label class="text-xs font-medium text-slate-300">Side / Extrusion Color</label>
-                                <div class="flex items-center space-x-1.5">
-                                    <input type="checkbox" id="toggle-autoshade" checked class="rounded bg-slate-950 border-slate-800 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5">
-                                    <label for="toggle-autoshade" class="text-[10px] text-slate-400 font-semibold cursor-pointer">Auto Shadow Shade</label>
-                                </div>
-                            </div>
-                            <div class="flex items-center space-x-2">
-                                <div class="relative flex-grow">
-                                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500 font-mono text-xs">#</span>
-                                    <input type="text" id="sideColorHex" value="1d4ed8" maxlength="6" disabled class="w-full bg-slate-950 pl-7 pr-3 py-2 text-xs font-mono rounded-xl border border-slate-800 focus:border-indigo-500 focus:outline-none opacity-50 cursor-not-allowed">
-                                </div>
-                                <input type="color" id="sideColorPicker" value="#1d4ed8" disabled class="w-10 h-8 rounded-xl bg-transparent cursor-pointer border-0 [color-scheme:dark] opacity-50 cursor-not-allowed">
-                            </div>
-                        </div>
+            undo: () => performUndo(),
+            clearActive: () => { saveState(); rawAnchors = []; renderSVG(); },
+            clearBase: () => { saveState(); basePoly = []; rawAnchors = []; view2D = { panX: 0, panY: 0, zoom: 1.0 }; applyView2D(); renderSVG(); },
+            setBase: () => applyBoolean('set'),
+            csgAdd: () => applyBoolean('union'),
+            csgSubtract: () => applyBoolean('subtract'),
+            csgIntersect: () => applyBoolean('intersect'),
 
-                        <!-- Studio Backdrop Style -->
-                        <div>
-                            <div class="flex items-center justify-between mb-1.5">
-                                <label class="text-xs font-medium text-slate-300">Background Backdrop</label>
-                                <div class="flex items-center space-x-1.5">
-                                    <input type="checkbox" id="toggle-transparent" class="rounded bg-slate-950 border-slate-800 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5">
-                                    <label for="toggle-transparent" class="text-[10px] text-slate-400 font-semibold cursor-pointer">Transparent PNG</label>
-                                </div>
-                            </div>
-                            <div class="flex items-center space-x-2" id="bg-color-wrapper">
-                                <div class="relative flex-grow">
-                                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500 font-mono text-xs">#</span>
-                                    <input type="text" id="bgColorHex" value="0f172a" maxlength="6" class="w-full bg-slate-950 pl-7 pr-3 py-2 text-xs font-mono rounded-xl border border-slate-800 focus:border-indigo-500 focus:outline-none">
-                                </div>
-                                <input type="color" id="bgColorPicker" value="#0f172a" class="w-10 h-8 rounded-xl bg-transparent cursor-pointer border-0 [color-scheme:dark]">
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            generate3D: '2D SVG Mode', 
+            extrudeDepth: 3,
+            revolveSegments: 32, 
+            revolveAngle: 360, 
+            revolvePillars: 4, 
 
-                <!-- CARD 4: Rotate & Align Engine -->
-                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
-                    <div class="flex items-center justify-between mb-4 cursor-pointer" onclick="toggleAccordion('acc-rotate')">
-                        <div class="flex items-center space-x-2.5">
-                            <i class="fa-solid fa-arrows-spin text-indigo-400 text-sm"></i>
-                            <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-200">Rotation & Orientation</h2>
-                        </div>
-                        <i id="acc-rotate-icon" class="fa-solid fa-chevron-up text-slate-400 text-xs transition-transform duration-300"></i>
-                    </div>
-                    
-                    <div id="acc-rotate-content" class="accordion-content open space-y-4">
-                        <!-- Direct X-Y-Z Sliders for Exact Aligning -->
-                        <div class="space-y-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
-                            <div>
-                                <div class="flex justify-between mb-1">
-                                    <span class="text-[11px] font-semibold text-red-400">Rotate X (Pitch)</span>
-                                    <span id="val-rotX" class="text-xs font-mono text-slate-400">30°</span>
-                                </div>
-                                <input type="range" id="range-rotX" min="-180" max="180" step="1" value="30" class="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-red-500">
-                            </div>
-                            <div>
-                                <div class="flex justify-between mb-1">
-                                    <span class="text-[11px] font-semibold text-emerald-400">Rotate Y (Yaw)</span>
-                                    <span id="val-rotY" class="text-xs font-mono text-slate-400">45°</span>
-                                </div>
-                                <input type="range" id="range-rotY" min="-180" max="180" step="1" value="45" class="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500">
-                            </div>
-                            <div>
-                                <div class="flex justify-between mb-1">
-                                    <span class="text-[11px] font-semibold text-blue-400">Rotate Z (Roll)</span>
-                                    <span id="val-rotZ" class="text-xs font-mono text-slate-400">0°</span>
-                                </div>
-                                <input type="range" id="range-rotZ" min="-180" max="180" step="1" value="0" class="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500">
-                            </div>
-                        </div>
+            viewMode: 'Dots + Wireframe (Solid back)', 
+            backgroundColor: 'Dark (Black)', 
+            objectColor: '#44aa88',
+            anchorSize3D: 0.15,
 
-                        <!-- Rotation Presets & Automatic Motor -->
-                        <div class="flex flex-wrap gap-2 pt-2">
-                            <button onclick="applyPresetAngle('isometric')" class="flex-1 min-w-[70px] bg-slate-800 hover:bg-slate-700 text-[11px] font-bold py-1.5 px-2 rounded-lg transition-colors border border-slate-700">Isometric</button>
-                            <button onclick="applyPresetAngle('front')" class="flex-1 min-w-[70px] bg-slate-800 hover:bg-slate-700 text-[11px] font-bold py-1.5 px-2 rounded-lg transition-colors border border-slate-700">Front Flat</button>
-                            <button onclick="applyPresetAngle('top')" class="flex-1 min-w-[70px] bg-slate-800 hover:bg-slate-700 text-[11px] font-bold py-1.5 px-2 rounded-lg transition-colors border border-slate-700">Top Down</button>
-                            <button onclick="applyPresetAngle('profile')" class="flex-1 min-w-[70px] bg-slate-800 hover:bg-slate-700 text-[11px] font-bold py-1.5 px-2 rounded-lg transition-colors border border-slate-700">Profile</button>
-                        </div>
-
-                        <div class="h-[1px] bg-slate-800"></div>
-
-                        <!-- Automatic Spin Motor -->
-                        <div class="flex items-center justify-between">
-                            <span class="text-xs font-medium text-slate-300">Continuous Auto-Rotate</span>
-                            <div class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="toggle-autorotate" class="sr-only peer">
-                                <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-
-            <!-- Right Side Visual Studio Render Frame (16:9 Viewport & Actions) -->
-            <div class="lg:col-span-7 space-y-6">
-                
-                <!-- 16:9 Viewport Box -->
-                <div class="relative w-full aspect-video rounded-2xl overflow-hidden shadow-2xl border border-slate-800 bg-slate-900 group">
-                    <!-- Loading State / Spinner -->
-                    <div id="render-loader" class="absolute inset-0 bg-slate-950/80 backdrop-blur flex flex-col items-center justify-center z-30 transition-opacity duration-300 pointer-events-none opacity-0">
-                        <div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-indigo-500 mb-3"></div>
-                        <span class="text-xs text-slate-400 font-semibold tracking-wider">Generating Extrusion...</span>
-                    </div>
-
-                    <!-- Canvas Container -->
-                    <div id="canvas-container" class="w-full h-full transition-all duration-200">
-                        <!-- Canvas is dynamically attached here -->
-                    </div>
-
-                    <!-- Floating Viewport Utility Controls -->
-                    <div class="absolute bottom-4 left-4 flex items-center space-x-2 z-20">
-                        <!-- Compass Angle Helper -->
-                        <button onclick="resetCameraAngle()" title="Reset Camera View" class="bg-slate-900/90 backdrop-blur border border-slate-700 hover:border-indigo-400 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md transition-all flex items-center space-x-1.5">
-                            <i class="fa-solid fa-compass"></i>
-                            <span>Reset View</span>
-                        </button>
-
-                        <!-- Auto-Rotate toggle button -->
-                        <button onclick="toggleAutoRotation()" id="btn-auto-rotate" title="Toggle Auto Rotation" class="bg-slate-900/90 backdrop-blur border border-slate-700 hover:border-indigo-400 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md transition-all flex items-center space-x-1.5">
-                            <i class="fa-solid fa-play text-indigo-400 animate-pulse-slow" id="btn-auto-rotate-icon"></i>
-                            <span id="btn-auto-rotate-text">Spin Object</span>
-                        </button>
-
-                        <!-- Grid Helper toggle -->
-                        <button onclick="toggleGridHelper()" id="btn-grid" title="Toggle Reference Floor Grid" class="bg-slate-900/90 backdrop-blur border border-slate-700 hover:border-indigo-400 text-slate-300 hover:text-white p-1.5 rounded-lg text-xs shadow-md transition-all">
-                            <i class="fa-solid fa-table-cells"></i>
-                        </button>
-                    </div>
-
-                    <div class="absolute top-4 right-4 z-20">
-                        <span class="bg-indigo-500/10 backdrop-blur border border-indigo-500/30 text-indigo-300 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                            16:9 Studio View
-                        </span>
-                    </div>
-                </div>
-
-                <!-- Export Studio Suite -->
-                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div>
-                            <h3 class="text-sm font-bold text-slate-200 uppercase tracking-wider mb-1 flex items-center space-x-2">
-                                <i class="fa-solid fa-download text-pink-500"></i>
-                                <span>Export Render Station</span>
-                            </h3>
-                            <p class="text-xs text-slate-400">Generate and download lossless high-resolution PNG copies of your flat 3D design</p>
-                        </div>
-                        
-                        <div class="flex flex-wrap items-center gap-3">
-                            <!-- Resolution Selector -->
-                            <div class="flex items-center space-x-2 bg-slate-950 border border-slate-800 p-1.5 rounded-xl">
-                                <span class="text-[10px] uppercase font-bold text-slate-500 px-2">Size</span>
-                                <select id="export-res" class="bg-transparent text-xs font-bold text-slate-300 border-0 focus:ring-0 focus:outline-none cursor-pointer" onchange="toggleCustomResField()">
-                                    <option value="1080p">1080p Full HD (1920x1080)</option>
-                                    <option value="4k">4K Ultra HD (3840x2160)</option>
-                                    <option value="8k">8K Extreme HD (7680x4320)</option>
-                                    <option value="custom">Custom Dimensions</option>
-                                </select>
-                            </div>
-
-                            <!-- Export Trigger Button -->
-                            <button onclick="triggerHighResExport()" class="bg-gradient-to-r from-indigo-500 to-pink-500 hover:from-indigo-600 hover:to-pink-600 text-white text-xs font-bold px-5 py-3 rounded-xl shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 transition-all flex items-center space-x-2">
-                                <i class="fa-solid fa-camera"></i>
-                                <span>Capture PNG</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Custom Resolution Input Box -->
-                    <div id="custom-res-wrapper" class="hidden grid grid-cols-2 gap-4 mt-4 p-4 bg-slate-950/60 rounded-xl border border-slate-800">
-                        <div>
-                            <label class="block text-xs text-slate-400 font-medium mb-1.5">Custom Width (px)</label>
-                            <input type="number" id="custom-w" value="1920" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-300">
-                        </div>
-                        <div>
-                            <label class="block text-xs text-slate-400 font-medium mb-1.5">Custom Height (px)</label>
-                            <input type="number" id="custom-h" value="1080" class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-300" disabled>
-                            <p class="text-[9px] text-slate-500 mt-1">Height is auto-locked to 16:9 aspect ratio</p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Live Designer Quick Tips -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-400">
-                    <div class="bg-slate-900/40 p-4 border border-slate-800/80 rounded-xl flex items-start space-x-3">
-                        <div class="bg-slate-900 border border-slate-700 p-1.5 rounded-lg text-indigo-400">
-                            <i class="fa-solid fa-arrows-to-eye"></i>
-                        </div>
-                        <div>
-                            <span class="font-bold text-slate-300 block mb-1">Canvas Mouse Controls</span>
-                            <span class="leading-relaxed">Drag mouse to orbit camera space. Scroll mouse wheel to Zoom in and out of focus. Hold Right Click + drag to pan view.</span>
-                        </div>
-                    </div>
-
-                    <div class="bg-slate-900/40 p-4 border border-slate-800/80 rounded-xl flex items-start space-x-3">
-                        <div class="bg-slate-900 border border-slate-700 p-1.5 rounded-lg text-pink-400">
-                            <i class="fa-solid fa-circle-nodes"></i>
-                        </div>
-                        <div>
-                            <span class="font-bold text-slate-300 block mb-1">Smooth Vector Secret</span>
-                            <span class="leading-relaxed">Increase <b>Curve Smoothing</b> for round vector parts, and set <b>Bevel Smoothing Segments</b> above 4 to eliminate jagged edges.</span>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-
-        </div>
-    </main>
-
-    <!-- Global Toast Notifications Panel -->
-    <div id="toast-container" class="fixed bottom-5 right-5 z-50 space-y-2 max-w-sm"></div>
-
-    <!-- Core Three.js dependencies -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/SVGLoader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-
-    <!-- App Engine JavaScript logic -->
-    <script>
-        // High fidelity SVG templates pre-loaded
-        const PRESET_SVGS = {
-            star: `<svg viewBox="0 0 100 100" fill="currentColor"><polygon points="50,5 64,36 98,36 70,57 81,91 50,70 19,91 30,57 2,36 36,36" /></svg>`,
-            lightning: `<svg viewBox="0 0 100 100" fill="currentColor"><polygon points="60,5 20,55 50,55 40,95 80,45 50,45" /></svg>`,
-            shield: `<svg viewBox="0 0 100 100" fill="currentColor"><path d="M10,15 L50,5 L90,15 C90,45 75,75 50,95 C25,75 10,45 10,15 Z" /></svg>`,
-            infinity: `<svg viewBox="0 0 100 100" fill="currentColor"><path d="M30,30 C15,30 5,40 5,50 C5,60 15,70 30,70 C40,70 47,63 50,58 C53,63 60,70 70,70 C85,70 95,60 95,50 C95,40 85,30 70,30 C60,30 53,37 50,42 C47,37 40,30 30,30 Z M30,42 C35,42 39,45 42,48 C39,52 35,55 30,55 C27,55 24,52 24,50 C24,47 27,42 30,42 Z M70,42 C73,42 76,45 76,50 C76,52 73,55 70,55 C65,55 61,52 58,48 C61,45 65,42 70,42 Z" /></svg>`,
-            diamond: `<svg viewBox="0 0 100 100" fill="currentColor"><polygon points="50,10 90,40 50,90 10,40" /></svg>`
-        };
-
-        const PRESET_ICONS = {
-            star: "fa-star",
-            lightning: "fa-bolt",
-            shield: "fa-shield-halved",
-            infinity: "fa-infinity",
-            diamond: "fa-gem"
-        };
-
-        // App Central Configuration State
-        const state = {
-            svgText: PRESET_SVGS.star,
-            selectedPreset: 'star',
+            lineThickness: 2.0,
+            dotDisplayRatio: 0.5,
+            lineDisplayRatio: 1.0,
             
-            // Extrusion Parameters
-            depth: 15.0,
-            bevelEnabled: true,
-            bevelSize: 1.2,
-            bevelThickness: 1.2,
-            bevelSegments: 4,
-            curveSegments: 20,
+            colorPalette: ['#924FF7', '#006AFF', '#04B84C', '#FF8549', '#CCE6FF', '#D9F4E4', '#EFE5FE', '#FFE7D9'], 
+            addColor: () => { params.colorPalette.push('#44aa88'); buildPaletteGUI(); updateDotColors(); },
+            removeColor: () => { if(params.colorPalette.length > 1) { params.colorPalette.pop(); buildPaletteGUI(); updateDotColors(); } },
             
-            // Materials & Shading Colors
-            renderStyle: 'vector', // vector, toon, silhouette
-            frontColor: '#3b82f6',
-            sideColor: '#1d4ed8',
-            autoShade: true,
-            bgColor: '#0f172a',
-            transparent: false,
-            
-            // Rotations
-            rotX: 30,
-            rotY: 45,
-            rotZ: 0,
+            cameraView: 'Free',
+            cameraFOV: 45,
+
+            interactionMode: false,
+            interactionStyle: 'Reveal Edges', 
+            interactionRadius: 6.0,
+            interactionColor: '#00ffff',
+
+            scatterEffect: false,
+            scatterMaxRadius: 15.0,
+            scatterSafeZone: 0.3,
+
             autoRotate: false,
-            autoRotateSpeed: 2.0,
-            showGrid: false,
-            
-            // Exports
-            exportRes: '1080p'
+            rotateSpeed: 1.0,
+            hoverEffect: false,
+            hoverSpeed: 2.0,
+            pulseEffect: false,
+            pulseSpeed: 3.0,
+
+            growthMode: false,
+            growthSpeed: 1.0,
+            growthBinaryStages: 6, 
+            startGrowthAnimation: () => { if(params.generate3D !== '2D SVG Mode') initGrowthAnimation(); else alert("Please switch to a 3D Mode first!"); },
+
+            exportJPG: () => {
+                renderer.render(scene, camera); 
+                const canvas = document.createElement('canvas');
+                // High-res export matching WebGL buffer
+                canvas.width = renderer.domElement.width;
+                canvas.height = renderer.domElement.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(renderer.domElement, 0, 0);
+
+                if (params.generate3D === '2D SVG Mode') {
+                    svgEditor.setAttribute('width', window.innerWidth);
+                    svgEditor.setAttribute('height', window.innerHeight);
+                    const svgData = new XMLSerializer().serializeToString(svgEditor);
+                    svgEditor.removeAttribute('width');
+                    svgEditor.removeAttribute('height');
+
+                    const img = new Image();
+                    const svgBlob = new Blob([svgData], {type: 'image/svg+xml;charset=utf-8'});
+                    const url = URL.createObjectURL(svgBlob);
+                    
+                    img.onload = function() {
+                        // Stretch SVG overlay to match physical pixel resolution
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        URL.revokeObjectURL(url);
+                        triggerDownload(canvas.toDataURL('image/jpeg', 0.95));
+                    };
+                    img.src = url;
+                } else {
+                    triggerDownload(canvas.toDataURL('image/jpeg', 0.95));
+                }
+
+                function triggerDownload(dataUrl) {
+                    const link = document.createElement('a');
+                    link.download = `Dash_Masterpiece_${new Date().getTime()}.jpg`;
+                    link.href = dataUrl;
+                    link.click();
+                }
+            }
         };
 
-        // Global ThreeJS instances
-        let scene, camera, renderer, controls, gridHelper;
-        let mainObjectGroup = null;
-        let keyLight, fillLight, ambientLight;
+        function getStableRandom(x, y, z) { return (Math.abs(Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453) % 1); }
+        function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+        function getPaletteColorHex(seed) {
+            const palette = params.colorPalette; if (palette.length === 0) return '#ffffff';
+            const pseudoRandom = Math.abs(Math.sin(seed * 12.9898) * 43758.5453);
+            return palette[Math.floor((pseudoRandom - Math.floor(pseudoRandom)) * palette.length)];
+        }
 
-        // On window load initialization
-        window.addEventListener('load', () => {
-            initAppPresets();
-            initThreeJS();
-            bindEvents();
-            rebuildExtrudedMesh();
-            animate();
+        function updateBackground() {
+            const isDark = params.backgroundColor === 'Dark (Black)';
+            scene.background = new THREE.Color(isDark ? 0x111111 : 0xffffff);
+            if (svgEditor) svgEditor.style.backgroundColor = isDark ? '#111111' : '#ffffff';
+            if (gridPath) gridPath.setAttribute('stroke', isDark ? '#2a2a2a' : '#e0e0e0');
+            const wireframe = generated3DGroup.getObjectByName("WireframeMesh");
+            if (wireframe && wireframe.material.color) {
+                wireframe.material.color.setHex(isDark ? 0x444444 : 0xbbbbbb);
+            }
+            applyViewMode();
+        }
+
+        function applyViewMode() {
+            const solid = generated3DGroup.getObjectByName("SolidMesh");
+            const wire = generated3DGroup.getObjectByName("WireframeMesh");
+            const mainAnchors = generated3DGroup.getObjectByName("SphereAnchorsMain");
+            const edgeAnchors = generated3DGroup.getObjectByName("SphereAnchorsEdges");
+            if (!solid || !wire) return;
+            
+            const isFullColor = params.viewMode.includes('Full color');
+            const isHiddenLine = params.viewMode.includes('(Solid back)');
+            const showWire = params.viewMode.includes('Wireframe');
+            const showDots = params.viewMode.includes('Dots') || params.viewMode === 'Only Dots';
+
+            if (isFullColor) {
+                solid.visible = true;
+                solid.material.color.set(params.objectColor);
+                solid.material.opacity = 1.0;
+            } else if (isHiddenLine) {
+                solid.visible = true;
+                solid.material.color.setHex(params.backgroundColor === 'Dark (Black)' ? 0x111111 : 0xffffff);
+                solid.material.opacity = 1.0;
+            } else {
+                solid.visible = false;
+            }
+
+            if (!params.interactionMode) wire.visible = showWire; else wire.visible = false;
+            
+            if(mainAnchors) mainAnchors.visible = showDots;
+            if(edgeAnchors) edgeAnchors.visible = showDots;
+            
+            if(wire.material) wire.material.opacity = 0.8;
+            if(mainAnchors) mainAnchors.material.opacity = 1.0;
+            if(edgeAnchors) edgeAnchors.material.opacity = 1.0;
+        }
+
+        function saveState() {
+            history.push({ rawAnchors: JSON.parse(JSON.stringify(rawAnchors)), basePoly: JSON.parse(JSON.stringify(basePoly)) });
+            if (history.length > 30) history.shift(); 
+        }
+
+        function performUndo() {
+            if (history.length > 0) {
+                const state = history.pop();
+                rawAnchors = state.rawAnchors; basePoly = state.basePoly; renderSVG();
+                if (params.generate3D !== '2D SVG Mode') generate3D();
+            }
+        }
+
+        function getDrawingPath(anchors, isClosed) {
+            if (anchors.length < 3 && !isClosed) return anchors.map(p => ({x: p.x, y: p.y}));
+            let result = [];
+            for (let i = 0; i < anchors.length; i++) {
+                const curr = anchors[i];
+                if (!curr.isCurve || (!isClosed && (i === 0 || i === anchors.length - 1))) {
+                    result.push({x: curr.x, y: curr.y}); continue;
+                }
+                const prev = anchors[(i - 1 + anchors.length) % anchors.length];
+                const next = anchors[(i + 1) % anchors.length];
+                const t = 0.35; 
+                const pStart = { x: curr.x + (prev.x - curr.x) * t, y: curr.y + (prev.y - curr.y) * t };
+                const pEnd   = { x: curr.x + (next.x - curr.x) * t, y: curr.y + (next.y - curr.y) * t };
+                
+                result.push(pStart);
+                const steps = 12; // Lock curve subdivision to high quality
+                for (let j = 1; j <= steps; j++) {
+                    const u = j / steps; const u1 = 1 - u;
+                    result.push({ x: u1*u1*pStart.x + 2*u1*u*curr.x + u*u*pEnd.x, y: u1*u1*pStart.y + 2*u1*u*curr.y + u*u*pEnd.y });
+                }
+            }
+            return result;
+        }
+
+        function getClosedRingData() {
+            if (rawAnchors.length < 3) return [];
+            const pts = getDrawingPath(rawAnchors, true);
+            const ring = pts.map(p => [p.x, p.y]);
+            ring.push([...ring[0]]); 
+            return ring;
+        }
+
+        function applyBoolean(operation) {
+            if (rawAnchors.length < 3) return alert("Please draw a shape on the canvas first!");
+            saveState(); 
+            const activePoly = [[getClosedRingData()]];
+            if (basePoly.length === 0) {
+                if (operation === 'set') basePoly = activePoly;
+            } else {
+                try {
+                    if (operation === 'union') basePoly = polyClip.union(basePoly, activePoly);
+                    else if (operation === 'subtract') basePoly = polyClip.difference(basePoly, activePoly);
+                    else if (operation === 'intersect') basePoly = polyClip.intersection(basePoly, activePoly);
+                    else if (operation === 'set') basePoly = activePoly;
+                } catch (e) {
+                    alert("Path self-intersection operation failed, please try again!"); history.pop(); 
+                }
+            }
+            rawAnchors = []; renderSVG();
+        }
+
+        function multiPolygonToPathData(mp) {
+            let d = "";
+            if (!mp) return d;
+            for (const poly of mp) {
+                for (const ring of poly) {
+                    if (!ring || ring.length === 0) continue;
+                    d += `M ${ring[0][0]} ${ring[0][1]} `;
+                    for (let i = 1; i < ring.length; i++) d += `L ${ring[i][0]} ${ring[i][1]} `;
+                    d += "Z ";
+                }
+            }
+            return d;
+        }
+
+        function applyView2D() {
+            const w = window.innerWidth, h = window.innerHeight;
+            if(svgTransform) svgTransform.setAttribute('transform', `translate(${w/2 + view2D.panX}, ${h/2 + view2D.panY}) scale(${view2D.zoom}, ${-view2D.zoom})`);
+            if(gridPattern && gridPath) {
+                const scaledSize = SCALE * view2D.zoom;
+                gridPattern.setAttribute('width', scaledSize); gridPattern.setAttribute('height', scaledSize);
+                gridPath.setAttribute('d', `M ${scaledSize} 0 L 0 0 0 ${scaledSize}`);
+                gridPattern.setAttribute('patternTransform', `translate(${(w/2 + view2D.panX)%scaledSize}, ${(h/2 + view2D.panY)%scaledSize})`);
+            }
+            renderSVG(); 
+        }
+
+        svgEditor.addEventListener('contextmenu', e => e.preventDefault()); 
+
+        let isPanning2D = false;
+        let lastMouse = {x: 0, y: 0};
+
+        svgEditor.addEventListener('wheel', (e) => {
+            if (params.generate3D !== '2D SVG Mode') return;
+            e.preventDefault();
+            const delta = -e.deltaY * 0.0015;
+            const newZoom = Math.max(0.1, Math.min(20.0, view2D.zoom * (1 + delta)));
+
+            const w = window.innerWidth, h = window.innerHeight;
+            const mouseX = e.clientX - w/2; const mouseY = e.clientY - h/2;
+
+            const worldX = (mouseX - view2D.panX) / view2D.zoom;
+            const worldY = (mouseY - view2D.panY) / view2D.zoom;
+
+            view2D.panX = mouseX - worldX * newZoom;
+            view2D.panY = mouseY - worldY * newZoom;
+            view2D.zoom = newZoom;
+
+            applyView2D();
         });
 
-        // Setup the preset select grid inside DOM
-        function initAppPresets() {
-            const grid = document.getElementById('preset-grid');
-            grid.innerHTML = '';
-            
-            Object.keys(PRESET_SVGS).forEach(key => {
-                const isActive = state.selectedPreset === key;
-                const button = document.createElement('button');
-                button.id = `preset-${key}`;
-                button.className = `aspect-square rounded-xl flex flex-col items-center justify-center border transition-all ${
-                    isActive 
-                    ? 'bg-indigo-600/20 border-indigo-500 text-indigo-400 shadow-md shadow-indigo-500/10' 
-                    : 'bg-slate-950 hover:bg-slate-800/50 border-slate-800 text-slate-400 hover:text-slate-200'
-                }`;
-                
-                button.innerHTML = `
-                    <i class="fa-solid ${PRESET_ICONS[key]} text-lg mb-1"></i>
-                    <span class="text-[9px] uppercase tracking-wider font-bold">${key}</span>
-                `;
-                button.onclick = () => selectPresetSVG(key);
-                grid.appendChild(button);
-            });
-        }
-
-        function selectPresetSVG(key) {
-            // Update active styling
-            document.querySelectorAll('#preset-grid button').forEach(btn => {
-                btn.className = btn.className.replace('bg-indigo-600/20 border-indigo-500 text-indigo-400 shadow-md shadow-indigo-500/10', 'bg-slate-950 hover:bg-slate-800/50 border-slate-800 text-slate-400 hover:text-slate-200');
-            });
-            document.getElementById(`preset-${key}`).className = 'aspect-square rounded-xl flex flex-col items-center justify-center border transition-all bg-indigo-600/20 border-indigo-500 text-indigo-400 shadow-md shadow-indigo-500/10';
-            
-            state.selectedPreset = key;
-            state.svgText = PRESET_SVGS[key];
-            rebuildExtrudedMesh();
-            showNotification(`Applied ${key.toUpperCase()} preset shape.`, 'info');
-        }
-
-        // Setup Scene Environment
-        function initThreeJS() {
-            const container = document.getElementById('canvas-container');
-            const width = container.clientWidth;
-            const height = container.clientHeight;
-
-            // 1. Scene
-            scene = new THREE.Scene();
-            
-            // 2. Camera (Perspective)
-            camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 1000);
-            camera.position.set(0, 0, 22);
-
-            // 3. Renderer
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-            renderer.setSize(width, height, true);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            renderer.shadowMap.enabled = false; // Rigid design specification: No shadows
-            container.appendChild(renderer.domElement);
-
-            // 4. Orbit Controls
-            controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.dampingFactor = 0.05;
-            controls.maxDistance = 50;
-            controls.minDistance = 5;
-
-            // 5. Environmental Lighting (Optional for Faceted Toon Style)
-            ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
-            scene.add(ambientLight);
-
-            keyLight = new THREE.DirectionalLight(0xffffff, 0.75);
-            keyLight.position.set(25, 40, 25);
-            scene.add(keyLight);
-
-            fillLight = new THREE.DirectionalLight(0xabc3f5, 0.35);
-            fillLight.position.set(-25, 10, -15);
-            scene.add(fillLight);
-
-            // Initial clear color matching background
-            renderer.setClearColor(new THREE.Color(state.bgColor), 1);
-
-            // Setup Resize Guard
-            const resizeObserver = new ResizeObserver(() => {
-                const w = container.clientWidth;
-                const h = container.clientHeight;
-                camera.aspect = w / h;
-                camera.updateProjectionMatrix();
-                renderer.setSize(w, h, true);
-            });
-            resizeObserver.observe(container);
-        }
-
-        // Bind interactive elements to active state
-        function bindEvents() {
-            // Extrusion Inputs
-            bindSlider('range-depth', 'val-depth', 'depth', true);
-            bindSlider('range-bevel-size', 'val-bevel-size', 'bevelSize', true);
-            bindSlider('range-bevel-thick', 'val-bevel-thick', 'bevelThickness', true);
-            bindSlider('range-bevel-seg', 'val-bevel-seg', 'bevelSegments', true);
-            bindSlider('range-curve-seg', 'val-curve-seg', 'curveSegments', true);
-
-            // Bevel Toggle Event
-            const toggleBevel = document.getElementById('toggle-bevel');
-            toggleBevel.addEventListener('change', (e) => {
-                state.bevelEnabled = e.target.checked;
-                const controlsDiv = document.getElementById('bevel-controls');
-                if (state.bevelEnabled) {
-                    controlsDiv.classList.remove('opacity-40', 'pointer-events-none');
-                } else {
-                    controlsDiv.classList.add('opacity-40', 'pointer-events-none');
-                }
-                rebuildExtrudedMesh();
-            });
-
-            // Rotations Sliders
-            bindSlider('range-rotX', 'val-rotX', 'rotX', false, (v) => {
-                applyManualRotation();
-                document.getElementById('val-rotX').innerText = v + '°';
-            });
-            bindSlider('range-rotY', 'val-rotY', 'rotY', false, (v) => {
-                applyManualRotation();
-                document.getElementById('val-rotY').innerText = v + '°';
-            });
-            bindSlider('range-rotZ', 'val-rotZ', 'rotZ', false, (v) => {
-                applyManualRotation();
-                document.getElementById('val-rotZ').innerText = v + '°';
-            });
-
-            // Auto Rotation Toggle Event (Sidebar Checkbox)
-            const toggleAutoRot = document.getElementById('toggle-autorotate');
-            toggleAutoRot.addEventListener('change', (e) => {
-                // Keep states opposite prior to calling toggle function so it switches correctly
-                state.autoRotate = !e.target.checked;
-                toggleAutoRotation();
-            });
-
-            // Drag and drop events
-            const dropzone = document.getElementById('dropzone');
-            const fileInput = document.getElementById('fileInput');
-
-            dropzone.addEventListener('click', () => fileInput.click());
-            dropzone.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                dropzone.classList.add('border-indigo-500', 'bg-indigo-950/10');
-            });
-            dropzone.addEventListener('dragleave', () => {
-                dropzone.classList.remove('border-indigo-500', 'bg-indigo-950/10');
-            });
-            dropzone.addEventListener('drop', (e) => {
-                e.preventDefault();
-                dropzone.classList.remove('border-indigo-500', 'bg-indigo-950/10');
-                if (e.dataTransfer.files.length > 0) {
-                    handleUploadedFile(e.dataTransfer.files[0]);
-                }
-            });
-            fileInput.addEventListener('change', (e) => {
-                if (e.target.files.length > 0) {
-                    handleUploadedFile(e.target.files[0]);
-                }
-            });
-
-            // Color inputs syncing
-            syncColors('front');
-            syncColors('side');
-            syncColors('bg');
-
-            // Autoshade checkbox
-            const toggleAutoShadeCheckbox = document.getElementById('toggle-autoshade');
-            toggleAutoShadeCheckbox.addEventListener('change', (e) => {
-                toggleAutoShadeState(e.target.checked);
-            });
-
-            // Transparent PNG checkbox
-            const toggleTransparentCheckbox = document.getElementById('toggle-transparent');
-            toggleTransparentCheckbox.addEventListener('change', (e) => {
-                state.transparent = e.target.checked;
-                const wrapper = document.getElementById('bg-color-wrapper');
-                if (state.transparent) {
-                    wrapper.classList.add('opacity-40', 'pointer-events-none');
-                } else {
-                    wrapper.classList.remove('opacity-40', 'pointer-events-none');
-                }
-                updateMaterialsAndSceneColors();
-            });
-
-            // Lock manual custom res ratios
-            const customWInput = document.getElementById('custom-w');
-            const customHInput = document.getElementById('custom-h');
-            customWInput.addEventListener('input', (e) => {
-                const w = parseInt(e.target.value) || 1920;
-                customHInput.value = Math.round(w * (9 / 16));
-            });
-        }
-
-        // Unified slider binding engine
-        function bindSlider(id, valId, stateProp, triggersRebuild = true, customCallback = null) {
-            const input = document.getElementById(id);
-            const display = document.getElementById(valId);
-            
-            input.addEventListener('input', (e) => {
-                let val = parseFloat(e.target.value);
-                state[stateProp] = val;
-                display.innerText = val.toFixed(input.step.includes('.') ? 1 : 0);
-                
-                if (customCallback) {
-                    customCallback(val);
-                }
-                if (triggersRebuild) {
-                    rebuildExtrudedMesh();
-                }
-            });
-        }
-
-        // Color Inputs Synchronization
-        function syncColors(type) {
-            const hexInput = document.getElementById(`${type}ColorHex`);
-            const picker = document.getElementById(`${type}ColorPicker`);
-
-            hexInput.addEventListener('input', (e) => {
-                let cleanVal = e.target.value.trim().replace('#', '');
-                if (cleanVal.length === 6) {
-                    picker.value = `#${cleanVal}`;
-                    state[`${type}Color`] = `#${cleanVal}`;
-                    updateMaterialsAndSceneColors();
-                }
-            });
-
-            picker.addEventListener('input', (e) => {
-                hexInput.value = e.target.value.replace('#', '');
-                state[`${type}Color`] = e.target.value;
-                updateMaterialsAndSceneColors();
-            });
-        }
-
-        function toggleAutoShadeState(enabled) {
-            state.autoShade = enabled;
-            const sideHex = document.getElementById('sideColorHex');
-            const sidePicker = document.getElementById('sideColorPicker');
-
-            if (enabled) {
-                sideHex.disabled = true;
-                sidePicker.disabled = true;
-                sideHex.classList.add('opacity-50', 'cursor-not-allowed');
-                sidePicker.classList.add('opacity-50', 'cursor-not-allowed');
-            } else {
-                sideHex.disabled = false;
-                sidePicker.disabled = false;
-                sideHex.classList.remove('opacity-50', 'cursor-not-allowed');
-                sidePicker.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
-            updateMaterialsAndSceneColors();
-        }
-
-        // Handle File Extraction
-        function handleUploadedFile(file) {
-            if (!file.name.endsWith('.svg')) {
-                showNotification("Invalid file format. Please upload a standard .svg file.", "error");
-                return;
-            }
-
-            const loader = document.getElementById('render-loader');
-            loader.classList.remove('opacity-0');
-
+        document.getElementById('svg-upload-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
             const reader = new FileReader();
-            reader.onload = (e) => {
-                const text = e.target.result;
-                if (!text.includes('<path') && !text.includes('<polygon') && !text.includes('<rect') && !text.includes('<circle') && !text.includes('<ellipse')) {
-                    showNotification("The SVG doesn't seem to contain any renderable paths.", "warning");
-                    loader.classList.add('opacity-0');
-                    return;
-                }
-                
-                state.svgText = text;
-                state.selectedPreset = null;
-                
-                // Clear active preset grids
-                document.querySelectorAll('#preset-grid button').forEach(btn => {
-                    btn.className = btn.className.replace('bg-indigo-600/20 border-indigo-500 text-indigo-400 shadow-md shadow-indigo-500/10', 'bg-slate-950 hover:bg-slate-800/50 border-slate-800 text-slate-400 hover:text-slate-200');
-                });
-
-                rebuildExtrudedMesh();
-                showNotification("Successfully loaded custom SVG shapes.", "success");
-            };
-            reader.readAsText(file);
-        }
-
-        // Extrude and Render logic
-        function rebuildExtrudedMesh() {
-            const loader = document.getElementById('render-loader');
-            loader.classList.remove('opacity-0');
-
-            setTimeout(() => {
+            
+            reader.onload = function(event) {
                 try {
-                    // 1. Dispose old instances
-                    if (mainObjectGroup) {
-                        scene.remove(mainObjectGroup);
-                        mainObjectGroup.children.forEach(child => {
-                            child.geometry.dispose();
-                            if (Array.isArray(child.material)) {
-                                child.material.forEach(m => m.dispose());
-                            } else {
-                                child.material.dispose();
-                            }
-                        });
-                    }
+                    const loader = new SVGLoader();
+                    const svgData = loader.parse(event.target.result);
+                    let importedPolys = [];
+                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
-                    mainObjectGroup = new THREE.Group();
-
-                    // 2. Parse paths using Three.js SVGLoader
-                    const svgLoader = new THREE.SVGLoader();
-                    const svgData = svgLoader.parse(state.svgText);
-
-                    if (!svgData || !svgData.paths || svgData.paths.length === 0) {
-                        showNotification("Could not find valid paths inside SVG file.", "error");
-                        loader.classList.add('opacity-0');
-                        return;
-                    }
-
-                    // 3. Extrusion Settings object
-                    const extrudeSettings = {
-                        depth: parseFloat(state.depth),
-                        bevelEnabled: state.bevelEnabled,
-                        bevelSegments: state.bevelEnabled ? parseInt(state.bevelSegments) : 0,
-                        steps: 1,
-                        bevelSize: state.bevelEnabled ? parseFloat(state.bevelSize) : 0,
-                        bevelThickness: state.bevelEnabled ? parseFloat(state.bevelThickness) : 0,
-                        curveSegments: parseInt(state.curveSegments)
-                    };
-
-                    // 4. Transform individual SVG paths to 3D extruded shapes
                     svgData.paths.forEach(path => {
-                        const shapes = THREE.SVGLoader.createShapes(path);
+                        const shapes = SVGLoader.createShapes(path);
                         shapes.forEach(shape => {
-                            const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-                            
-                            // Scale/flip inside vertices mapping to offset standard top-left SVG layout
-                            geometry.scale(1, -1, 1);
-                            
-                            const mesh = new THREE.Mesh(geometry);
-                            mainObjectGroup.add(mesh);
+                            let poly = [];
+                            let outer = shape.getPoints(2); 
+                            if (outer.length > 2) {
+                                outer.forEach(p => {
+                                    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+                                    maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+                                });
+                                let outerRing = outer.map(p => [p.x, p.y]);
+                                if(outerRing[0][0] !== outerRing[outerRing.length-1][0] || outerRing[0][1] !== outerRing[outerRing.length-1][1]) outerRing.push([...outerRing[0]]);
+                                poly.push(outerRing);
+
+                                if (shape.holes && shape.holes.length > 0) {
+                                    shape.holes.forEach(hole => {
+                                        let holePts = hole.getPoints(2);
+                                        if (holePts.length > 2) {
+                                            holePts.forEach(p => {
+                                                minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+                                                maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+                                            });
+                                            let holeRing = holePts.map(p => [p.x, p.y]);
+                                            if(holeRing[0][0] !== holeRing[holeRing.length-1][0] || holeRing[0][1] !== holeRing[holeRing.length-1][1]) holeRing.push([...holeRing[0]]);
+                                            poly.push(holeRing);
+                                        }
+                                    });
+                                }
+                                importedPolys.push(poly);
+                            }
                         });
                     });
 
-                    // 5. Compute global bounding box & center/normalize the grouped geometry perfectly
-                    if (mainObjectGroup.children.length > 0) {
-                        const box = new THREE.Box3().setFromObject(mainObjectGroup);
-                        const center = new THREE.Vector3();
-                        box.getCenter(center);
-                        
-                        const size = new THREE.Vector3();
-                        box.getSize(size);
-                        
-                        const maxDimension = Math.max(size.x, size.y);
-                        const scaleTarget = 10; // Target viewport standard size bounding box scale
-                        const normalizationScale = scaleTarget / (maxDimension || 1);
+                    if (importedPolys.length === 0) return alert("No valid paths extracted.");
 
-                        mainObjectGroup.children.forEach(mesh => {
-                            mesh.geometry.translate(-center.x, -center.y, -center.z);
-                            mesh.geometry.scale(normalizationScale, normalizationScale, normalizationScale);
-                            mesh.geometry.computeVertexNormals();
-                        });
+                    const cx = (minX + maxX) / 2; const cy = (minY + maxY) / 2;
+                    const scaleFactor = 400 / (maxX - minX || 1); 
 
-                        applyManualRotation();
-                        scene.add(mainObjectGroup);
-                        
-                        updateMaterialsAndSceneColors();
-                        updateMeshRenderStats();
-                    }
+                    // SVG mapping: Negative Y-axis flip
+                    importedPolys = importedPolys.map(poly => 
+                        poly.map(ring => ring.map(p => [(p[0] - cx) * scaleFactor, -(p[1] - cy) * scaleFactor]))
+                    );
 
-                } catch (err) {
-                    showNotification(`Error rendering: ${err.message}`, "error");
-                    console.error(err);
-                } finally {
-                    loader.classList.add('opacity-0');
+                    saveState(); rawAnchors = []; 
+                    if (basePoly.length === 0) { basePoly = importedPolys; } 
+                    else { try { basePoly = polyClip.union(basePoly, importedPolys); } catch(e) { basePoly = importedPolys; } }
+
+                    view2D = { panX: 0, panY: 0, zoom: 1.0 }; applyView2D();
+                    alert(`✅ SVG imported successfully! The system has perfectly restored the graphic and internal holes.\nRed dots can be dragged and modified!`);
+                } catch (err) { console.error(err); alert("Failed to read SVG! Please ensure the file is a standard vector graphic."); }
+            };
+            reader.readAsText(file); e.target.value = ''; 
+        });
+
+        function renderSVG() {
+            const thickness = params.lineThickness || 2;
+            const dynamicStroke = thickness / view2D.zoom;
+            const dynamicRadius = (thickness + 3) / view2D.zoom;
+
+            if (baseShapesPath) {
+                baseShapesPath.setAttribute('d', multiPolygonToPathData(basePoly));
+                baseShapesPath.setAttribute('fill', params.objectColor);
+                baseShapesPath.setAttribute('stroke-width', dynamicStroke);
+            }
+            if (activeShapePath) {
+                if (rawAnchors.length >= 3) {
+                    activeShapePath.setAttribute('d', multiPolygonToPathData([[getClosedRingData()]]));
+                    activeShapePath.style.display = 'block';
+                    activeShapePath.setAttribute('stroke-width', dynamicStroke);
+                } else activeShapePath.style.display = 'none';
+            }
+            const previewPath = getDrawingPath(rawAnchors, false);
+            if (drawingLinePath) {
+                let lineD = "";
+                if (previewPath.length > 0) {
+                    lineD += `M ${previewPath[0].x} ${previewPath[0].y} `;
+                    for(let i=1; i<previewPath.length; i++) lineD += `L ${previewPath[i].x} ${previewPath[i].y} `;
                 }
-            }, 50);
+                drawingLinePath.setAttribute('d', lineD);
+                drawingLinePath.setAttribute('stroke-width', Math.max(1, thickness*0.75) / view2D.zoom);
+            }
+
+            if (anchorDotsGroup) {
+                anchorDotsGroup.innerHTML = '';
+                basePoly.forEach((poly, pIdx) => {
+                    poly.forEach((ring, rIdx) => {
+                        for(let i=0; i<ring.length - 1; i++) {
+                            const pt = ring[i];
+                            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                            circle.setAttribute('cx', pt[0]); circle.setAttribute('cy', pt[1]);
+                            circle.setAttribute('r', dynamicRadius); 
+                            circle.setAttribute('fill', '#e74c3c'); 
+                            circle.setAttribute('stroke', '#ffffff'); circle.setAttribute('stroke-width', 1 / view2D.zoom);
+                            anchorDotsGroup.appendChild(circle);
+                        }
+                    });
+                });
+
+                if (previewPath.length > 1 && params.edgeDots > 0) {
+                    for (let i = 0; i < previewPath.length - 1; i++) {
+                        const p1 = previewPath[i]; const p2 = previewPath[i+1];
+                        const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+                        const segs = Math.max(1, Math.floor(dist * (params.edgeDots / 150))); 
+                        for (let j = 1; j < segs; j++) {
+                            const t = j / segs; const pt = { x: p1.x + (p2.x - p1.x)*t, y: p1.y + (p2.y - p1.y)*t };
+                            
+                            // Visual decouple: Hide excess dots visually
+                            if (getStableRandom(pt.x, pt.y, 0) > params.dotDisplayRatio) continue;
+                            
+                            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                            circle.setAttribute('cx', pt.x); circle.setAttribute('cy', pt.y);
+                            circle.setAttribute('r', dynamicRadius * 0.7); 
+                            circle.setAttribute('fill', getPaletteColorHex(i*100+j));
+                            anchorDotsGroup.appendChild(circle);
+                        }
+                    }
+                }
+
+                for(let i=0; i<rawAnchors.length; i++) {
+                    const p = rawAnchors[i];
+                    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    circle.setAttribute('cx', p.x); circle.setAttribute('cy', p.y);
+                    circle.setAttribute('r', dynamicRadius * 1.2); 
+                    circle.setAttribute('fill', getPaletteColorHex(i + 9999));
+                    
+                    if(p.isCurve) {
+                        circle.setAttribute('stroke', '#ffffff'); circle.setAttribute('stroke-width', dynamicStroke);
+                        circle.setAttribute('stroke-dasharray', `${dynamicStroke} ${dynamicStroke}`);
+                    } else {
+                        circle.setAttribute('stroke', '#ffffff'); circle.setAttribute('stroke-width', dynamicStroke*0.6);
+                    }
+                    anchorDotsGroup.appendChild(circle);
+                }
+            }
         }
 
-        // Material Updates / Visual Style Configuration
-        function updateMaterialsAndSceneColors() {
-            if (!mainObjectGroup) return;
+        function getSvgCoord(e, applySnap) {
+            const w = window.innerWidth, h = window.innerHeight;
+            let x = (e.clientX - w/2 - view2D.panX) / view2D.zoom;
+            let y = (h/2 + view2D.panY - e.clientY) / view2D.zoom;
+            if (applySnap && params.gridSnap) {
+                x = Math.round(x / SCALE) * SCALE; y = Math.round(y / SCALE) * SCALE;
+            }
+            return { x, y };
+        }
 
-            const fColor = new THREE.Color(state.frontColor);
-            let sColor;
+        window.addEventListener('pointermove', (e) => {
+            mouse2D.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse2D.y = -(e.clientY / window.innerHeight) * 2 + 1;
 
-            if (state.autoShade) {
-                // Generate a darker complementary shading for the depth sides
-                const hsl = {};
-                fColor.getHSL(hsl);
-                // Lower lightness smoothly based on initial value
-                hsl.l = Math.max(0, hsl.l - 0.18);
-                sColor = new THREE.Color().setHSL(hsl.h, hsl.s, hsl.l);
+            if (isPanning2D && params.generate3D === '2D SVG Mode') {
+                view2D.panX += e.clientX - lastMouse.x; view2D.panY += e.clientY - lastMouse.y;
+                lastMouse = {x: e.clientX, y: e.clientY}; applyView2D(); return;
+            }
+
+            if (draggingIndex !== -1) {
+                const snappedPt = getSvgCoord(e, params.gridSnap);
+                rawAnchors[draggingIndex].x = snappedPt.x; rawAnchors[draggingIndex].y = snappedPt.y; renderSVG();
+            } else if (draggingBasePolyIndex) {
+                const { pIdx, rIdx, ptIdx } = draggingBasePolyIndex;
+                const snappedPt = getSvgCoord(e, params.gridSnap);
+                basePoly[pIdx][rIdx][ptIdx][0] = snappedPt.x; basePoly[pIdx][rIdx][ptIdx][1] = snappedPt.y;
+                if (ptIdx === 0) {
+                    const lastIdx = basePoly[pIdx][rIdx].length - 1;
+                    basePoly[pIdx][rIdx][lastIdx][0] = snappedPt.x; basePoly[pIdx][rIdx][lastIdx][1] = snappedPt.y;
+                }
+                renderSVG();
+            }
+        });
+
+        svgEditor.addEventListener('pointerdown', (e) => {
+            if (e.clientX > window.innerWidth - 300) return; 
+
+            if (e.button === 1 || e.button === 2) {
+                isPanning2D = true; lastMouse = {x: e.clientX, y: e.clientY}; svgEditor.classList.add('pan-mode'); return;
+            }
+
+            const rawPt = getSvgCoord(e, false);
+            const snappedPt = getSvgCoord(e, true);
+            const HIT_RADIUS = 15 / view2D.zoom; 
+
+            for (let i = 0; i < rawAnchors.length; i++) {
+                if (Math.hypot(rawAnchors[i].x - rawPt.x, rawAnchors[i].y - rawPt.y) < HIT_RADIUS) {
+                    saveState(); draggingIndex = i; svgEditor.classList.add('drag-mode'); return; 
+                }
+            }
+
+            if (draggingIndex === -1 && basePoly.length > 0) {
+                for (let pIdx = 0; pIdx < basePoly.length; pIdx++) {
+                    for (let rIdx = 0; rIdx < basePoly[pIdx].length; rIdx++) {
+                        for (let ptIdx = 0; ptIdx < basePoly[pIdx][rIdx].length - 1; ptIdx++) {
+                            const pt = basePoly[pIdx][rIdx][ptIdx];
+                            if (Math.hypot(pt[0] - rawPt.x, pt[1] - rawPt.y) < HIT_RADIUS) {
+                                saveState(); draggingBasePolyIndex = { pIdx, rIdx, ptIdx }; svgEditor.classList.add('drag-mode'); return;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (rawAnchors.length > 0) {
+                const last = rawAnchors[rawAnchors.length - 1];
+                if (Math.abs(last.x - snappedPt.x) < 1 && Math.abs(last.y - snappedPt.y) < 1) return;
+            }
+            saveState(); 
+            rawAnchors.push({ x: snappedPt.x, y: snappedPt.y, isCurve: (params.pointType === 'Curve') });
+            renderSVG();
+        });
+
+        window.addEventListener('pointerup', (e) => {
+            if (e.button === 1 || e.button === 2) { isPanning2D = false; svgEditor.classList.remove('pan-mode'); }
+            if (draggingIndex !== -1 || draggingBasePolyIndex) { 
+                draggingIndex = -1; draggingBasePolyIndex = null; svgEditor.classList.remove('drag-mode'); 
+                if (params.generate3D !== '2D SVG Mode') generate3D(); 
+            }
+        });
+
+        function setCameraView() {
+            if (params.generate3D === '2D SVG Mode') return; 
+            const dist = 35; 
+            switch (params.cameraView) {
+                case 'Isometric': camera.position.set(dist, dist, dist); break;
+                case 'Front': camera.position.set(0, 0, dist); break;
+                case 'Back': camera.position.set(0, 0, -dist); break;
+                case 'Side (Right)': camera.position.set(dist, 0, 0); break;
+                case 'Side (Left)': camera.position.set(-dist, 0, 0); break;
+                case 'Top': camera.position.set(0, dist, 0); break;
+                case 'Free': return; 
+            }
+            camera.lookAt(0, 0, 0); controls.target.set(0, 0, 0); controls.update();
+        }
+
+        function setMode() {
+            const is2D = (params.generate3D === '2D SVG Mode');
+            if (svgEditor) svgEditor.style.display = is2D ? 'block' : 'none';
+            if (instructionsDiv) instructionsDiv.style.display = is2D ? 'block' : 'none';
+            controls.enableRotate = !is2D;
+            if (is2D) {
+                generated3DGroup.clear(); growthGroup.clear(); camera.position.set(0, 0, 30); camera.lookAt(0,0,0); applyView2D();
+            } else {
+                generate3D(); if (params.cameraView !== 'Free') setCameraView(); 
+            }
+        }
+
+        function generate3D() {
+            generated3DGroup.clear(); growthGroup.clear();
+            generated3DGroup.position.set(0,0,0); generated3DGroup.rotation.set(0,0,0); generated3DGroup.scale.set(1,1,1);
+            
+            interactiveDotsArray = []; globalStructuralEdges = []; finalTargetPoints = []; 
+
+            if (basePoly.length === 0) return alert("Base model is empty! Please draw or import on the canvas first.");
+
+            const absoluteCorners = [];
+            const structural2DPoints = [];
+
+            for (const poly of basePoly) {
+                const rings = [poly[0], ...poly.slice(1)];
+                for (const ring of rings) {
+                    if (ring.length <= 4) { ring.forEach(p => structural2DPoints.push(p)); continue; }
+                    for(let i=0; i<ring.length - 1; i++) { 
+                        const pPrev = ring[(i - 1 + (ring.length-1)) % (ring.length-1)];
+                        const pCurr = ring[i];
+                        const pNext = ring[(i + 1) % (ring.length-1)];
+                        
+                        const v1 = new THREE.Vector2(pCurr[0] - pPrev[0], pCurr[1] - pPrev[1]).normalize();
+                        const v2 = new THREE.Vector2(pNext[0] - pCurr[0], pNext[1] - pCurr[1]).normalize();
+                        if (v1.dot(v2) < 0.95 || i === 0) structural2DPoints.push(pCurr);
+                    }
+                }
+            }
+
+            if (params.generate3D === 'Extrude') {
+                const zOff = params.extrudeDepth / 2;
+                for (const p of structural2DPoints) {
+                    absoluteCorners.push(new THREE.Vector3(p[0]/SCALE, p[1]/SCALE, zOff));
+                    absoluteCorners.push(new THREE.Vector3(p[0]/SCALE, p[1]/SCALE, -zOff));
+                }
+            } else if (params.generate3D === 'Revolve') {
+                const segments = Math.max(3, params.revolveSegments);
+                const phiLength = params.revolveAngle * Math.PI / 180;
+                const pillars = Math.max(2, params.revolvePillars); 
                 
-                // Update text/hex inputs dynamically
-                const hexStr = sColor.getHexString();
-                document.getElementById('sideColorHex').value = hexStr;
-                document.getElementById('sideColorPicker').value = `#${hexStr}`;
-                state.sideColor = `#${hexStr}`;
-            } else {
-                sColor = new THREE.Color(state.sideColor);
-            }
-
-            mainObjectGroup.children.forEach(mesh => {
-                // Dispose existing materials first to avoid memory leak
-                if (Array.isArray(mesh.material)) {
-                    mesh.material.forEach(m => m.dispose());
-                } else if (mesh.material) {
-                    mesh.material.dispose();
-                }
-
-                if (state.renderStyle === 'silhouette') {
-                    // Identical face/side colors with basic materials for flat silhouetting
-                    mesh.material = [
-                        new THREE.MeshBasicMaterial({ color: fColor, side: THREE.DoubleSide }),
-                        new THREE.MeshBasicMaterial({ color: fColor, side: THREE.DoubleSide })
-                    ];
-                } else if (state.renderStyle === 'toon') {
-                    // Uses phong shader with clean faceted surfaces and direction lighting. Zero shadow casting.
-                    mesh.material = [
-                        new THREE.MeshPhongMaterial({ color: fColor, flatShading: true, shininess: 0, side: THREE.DoubleSide }),
-                        new THREE.MeshPhongMaterial({ color: sColor, flatShading: true, shininess: 0, side: THREE.DoubleSide })
-                    ];
-                } else {
-                    // Standard premium 'vector' flat art: basic non-shaded colors.
-                    mesh.material = [
-                        new THREE.MeshBasicMaterial({ color: fColor, side: THREE.DoubleSide }),
-                        new THREE.MeshBasicMaterial({ color: sColor, side: THREE.DoubleSide })
-                    ];
-                }
-            });
-
-            // Update background clearing strategy
-            if (state.transparent) {
-                renderer.setClearColor(0x000000, 0);
-                document.getElementById('canvas-container').classList.add('bg-checkerboard');
-            } else {
-                renderer.setClearColor(new THREE.Color(state.bgColor), 1);
-                document.getElementById('canvas-container').classList.remove('bg-checkerboard');
-            }
-        }
-
-        // Apply slider rotations to object Group space
-        function applyManualRotation() {
-            if (!mainObjectGroup) return;
-            mainObjectGroup.rotation.x = THREE.MathUtils.degToRad(state.rotX);
-            mainObjectGroup.rotation.y = THREE.MathUtils.degToRad(state.rotY);
-            mainObjectGroup.rotation.z = THREE.MathUtils.degToRad(state.rotZ);
-        }
-
-        // Sync slider values when angle presets are applied
-        function syncRotationSlidersUI() {
-            document.getElementById('range-rotX').value = state.rotX;
-            document.getElementById('val-rotX').innerText = state.rotX + '°';
-            
-            document.getElementById('range-rotY').value = state.rotY;
-            document.getElementById('val-rotY').innerText = state.rotY + '°';
-            
-            document.getElementById('range-rotZ').value = state.rotZ;
-            document.getElementById('val-rotZ').innerText = state.rotZ + '°';
-        }
-
-        // Apply standard camera projection alignment presets
-        function applyPresetAngle(preset) {
-            if (preset === 'isometric') {
-                state.rotX = 30;
-                state.rotY = 45;
-                state.rotZ = 0;
-            } else if (preset === 'front') {
-                state.rotX = 0;
-                state.rotY = 0;
-                state.rotZ = 0;
-            } else if (preset === 'top') {
-                state.rotX = 90;
-                state.rotY = 0;
-                state.rotZ = 0;
-            } else if (preset === 'profile') {
-                state.rotX = 0;
-                state.rotY = 90;
-                state.rotZ = 0;
-            }
-            
-            syncRotationSlidersUI();
-            applyManualRotation();
-            resetCameraAngle();
-            showNotification(`Applied ${preset} camera angle preset.`, "info");
-        }
-
-        // Set Shading Style Mode
-        function setRenderStyle(style) {
-            state.renderStyle = style;
-            
-            // Toggle active classes on action buttons
-            const styles = ['vector', 'toon', 'silhouette'];
-            styles.forEach(s => {
-                const btn = document.getElementById(`btn-style-${s}`);
-                if (s === style) {
-                    btn.className = "px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white transition-colors duration-200";
-                } else {
-                    btn.className = "px-2.5 py-1.5 text-xs font-semibold rounded-lg text-slate-400 hover:text-slate-200 transition-colors duration-200";
-                }
-            });
-
-            updateMaterialsAndSceneColors();
-            showNotification(`Switched render shading style to: ${style.toUpperCase()}`, "info");
-        }
-
-        // Toggle Reference Grid in 3D frame
-        function toggleGridHelper() {
-            state.showGrid = !state.showGrid;
-            const gridBtn = document.getElementById('btn-grid');
-
-            if (state.showGrid) {
-                gridHelper = new THREE.GridHelper(30, 30, 0x4f46e5, 0x334155);
-                gridHelper.position.y = -6;
-                scene.add(gridHelper);
-                gridBtn.className = "bg-indigo-600 border border-indigo-500 text-white p-1.5 rounded-lg text-xs shadow-md transition-all";
-            } else {
-                if (gridHelper) scene.remove(gridHelper);
-                gridBtn.className = "bg-slate-900/90 backdrop-blur border border-slate-700 hover:border-indigo-400 text-slate-300 hover:text-white p-1.5 rounded-lg text-xs shadow-md transition-all";
-            }
-        }
-
-        // Toggle Automatic continuous spin (Syncs Play Button & Slider Checkbox)
-        function toggleAutoRotation() {
-            state.autoRotate = !state.autoRotate;
-
-            // Sync with sidebar switch checkbox
-            const toggleSwitch = document.getElementById('toggle-autorotate');
-            if (toggleSwitch) {
-                toggleSwitch.checked = state.autoRotate;
-            }
-
-            // Sync Viewport Button UI Style and Labels
-            const btn = document.getElementById('btn-auto-rotate');
-            const icon = document.getElementById('btn-auto-rotate-icon');
-            const text = document.getElementById('btn-auto-rotate-text');
-
-            if (state.autoRotate) {
-                btn.className = "bg-indigo-600/90 backdrop-blur border border-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md transition-all flex items-center space-x-1.5";
-                icon.className = "fa-solid fa-pause text-white";
-                text.innerText = "Spinning";
-                showNotification("Auto-rotation activated.", "success");
-            } else {
-                btn.className = "bg-slate-900/90 backdrop-blur border border-slate-700 hover:border-indigo-400 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-md transition-all flex items-center space-x-1.5";
-                icon.className = "fa-solid fa-play text-indigo-400";
-                text.innerText = "Spin Object";
-                showNotification("Auto-rotation paused.", "info");
-            }
-        }
-
-        // Track scene complexity details
-        function updateMeshRenderStats() {
-            let vertices = 0;
-            let polygons = 0;
-            
-            if (mainObjectGroup) {
-                mainObjectGroup.children.forEach(child => {
-                    const geom = child.geometry;
-                    if (geom) {
-                        const pos = geom.attributes.position;
-                        if (pos) {
-                            vertices += pos.count;
-                        }
-                        if (geom.index) {
-                            polygons += geom.index.count / 3;
-                        } else if (pos) {
-                            polygons += pos.count / 3;
+                for (const p of structural2DPoints) {
+                    const r = p[0]/SCALE; const y = p[1]/SCALE; 
+                    for(let j=0; j<=segments; j++) {
+                        if (j % Math.max(1, Math.round(segments / pillars)) === 0 || j === segments) {
+                            const theta = (j/segments) * phiLength;
+                            absoluteCorners.push(new THREE.Vector3(r * Math.cos(theta), y, r * Math.sin(theta)));
                         }
                     }
+                }
+            }
+
+            function subdivideContour(ptsArray) {
+                if (ptsArray.length < 2) return ptsArray;
+                const result = [];
+                for (let i = 0; i < ptsArray.length; i++) {
+                    const p1 = ptsArray[i]; const p2 = ptsArray[(i + 1) % ptsArray.length];
+                    result.push(p1); 
+                    if (params.edgeDots > 0) {
+                        const dist = new THREE.Vector2(p1.x, p1.y).distanceTo(new THREE.Vector2(p2.x, p2.y));
+                        const segs = Math.max(1, Math.floor(dist * (params.edgeDots / 10))); 
+                        for (let j = 1; j < segs; j++) {
+                            const t = j / segs;
+                            result.push(new THREE.Vector2().lerpVectors(new THREE.Vector2(p1.x, p1.y), new THREE.Vector2(p2.x, p2.y), t));
+                        }
+                    }
+                }
+                return result;
+            }
+
+            let geometry;
+            if (params.generate3D === 'Extrude') {
+                const shapes = [];
+                for (const poly of basePoly) {
+                    let outerPts = poly[0].map(p => new THREE.Vector2(p[0]/SCALE, p[1]/SCALE));
+                    outerPts = subdivideContour(outerPts);
+                    const shape = new THREE.Shape(outerPts);
+                    for (let i = 1; i < poly.length; i++) {
+                        let holePts = poly[i].map(p => new THREE.Vector2(p[0]/SCALE, p[1]/SCALE));
+                        holePts = subdivideContour(holePts);
+                        shape.holes.push(new THREE.Path(holePts));
+                    }
+                    shapes.push(shape);
+                }
+                geometry = new THREE.ExtrudeGeometry(shapes, { depth: params.extrudeDepth, bevelEnabled: false, curveSegments: 1, steps: Math.max(1, params.edgeDots) });
+                geometry.translate(0, 0, -params.extrudeDepth / 2); 
+
+            } else if (params.generate3D === 'Revolve') {
+                const latheGeometries = [];
+                const phiLength = params.revolveAngle * Math.PI / 180;
+                for (const poly of basePoly) {
+                    const rings = [poly[0], ...poly.slice(1)];
+                    for (const ring of rings) {
+                        let pts = ring.map(p => new THREE.Vector2(p[0]/SCALE, p[1]/SCALE));
+                        pts = subdivideContour(pts);
+                        latheGeometries.push(new THREE.LatheGeometry(pts, params.revolveSegments, 0, phiLength));
+                    }
+                }
+                if (latheGeometries.length > 0) geometry = BufferGeometryUtils.mergeGeometries(latheGeometries, false);
+            }
+
+            if (!geometry) return;
+
+            const solidMat = new THREE.MeshBasicMaterial({ color: params.objectColor, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, transparent: true, opacity: 1.0 });
+            const solidMesh = new THREE.Mesh(geometry, solidMat); solidMesh.name = "SolidMesh";
+            
+            const edgesGeo = new THREE.EdgesGeometry(geometry, 5); 
+            const edgesPosAttr = edgesGeo.getAttribute('position');
+            const filteredEdgesPositions = [];
+            
+            for(let i = 0; i < edgesPosAttr.count; i += 2) {
+                const v1 = new THREE.Vector3().fromBufferAttribute(edgesPosAttr, i);
+                const v2 = new THREE.Vector3().fromBufferAttribute(edgesPosAttr, i+1);
+                
+                globalStructuralEdges.push({ p1: v1, p2: v2 });
+                
+                if (getStableRandom(v1.x, v1.y, v1.z) <= params.lineDisplayRatio) {
+                    filteredEdgesPositions.push(v1.x, v1.y, v1.z, v2.x, v2.y, v2.z);
+                }
+            }
+
+            if (filteredEdgesPositions.length > 0) {
+                const lineSegmentsGeo = new LineSegmentsGeometry();
+                lineSegmentsGeo.setPositions(filteredEdgesPositions);
+                const isDark = params.backgroundColor === 'Dark (Black)';
+                const wireMat = new LineMaterial({ 
+                    color: isDark ? 0x444444 : 0xbbbbbb, 
+                    linewidth: params.lineThickness, 
+                    transparent: true, 
+                    opacity: 0.8,
+                    resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
+                });
+                const wireframeMesh = new LineSegments2(lineSegmentsGeo, wireMat); 
+                wireframeMesh.name = "WireframeMesh";
+                generated3DGroup.add(wireframeMesh);
+            }
+
+            const posAttr = edgesGeo.getAttribute('position');
+            const uniqueVerts = []; const seen = new Set(); const v = new THREE.Vector3();
+            for(let i=0; i<posAttr.count; i++) {
+                v.fromBufferAttribute(posAttr, i);
+                const key = `${v.x.toFixed(3)}_${v.y.toFixed(3)}_${v.z.toFixed(3)}`;
+                if (!seen.has(key)) { seen.add(key); uniqueVerts.push(v.clone()); }
+            }
+
+            const mainCornerDots = []; const edgeInternalDots = [];
+            for (const uv of uniqueVerts) {
+                let isMainCorner = false;
+                for (const c of absoluteCorners) { 
+                    if (uv.distanceTo(c) < 0.01) { isMainCorner = true; break; } 
+                }
+                if (isMainCorner) {
+                    mainCornerDots.push({ pos: uv, visible: true }); 
+                } else {
+                    const isVis = getStableRandom(uv.x, uv.y, uv.z) <= params.dotDisplayRatio;
+                    edgeInternalDots.push({ pos: uv, visible: isVis }); 
+                }
+            }
+
+            interactiveDotsArray = [...mainCornerDots.map(d=>d.pos), ...edgeInternalDots.map(d=>d.pos)];
+            finalTargetPoints = [...interactiveDotsArray]; 
+
+            centralPoint.set(0,0,0);
+            if (finalTargetPoints.length > 0) {
+                for (let p of finalTargetPoints) centralPoint.add(p);
+                centralPoint.divideScalar(finalTargetPoints.length);
+            }
+            
+            mainCornerDotsCache = mainCornerDots.map(d => ({ pos: d.pos.clone(), visible: d.visible }));
+            edgeInternalDotsCache = edgeInternalDots.map(d => ({ pos: d.pos.clone(), visible: d.visible }));
+            scatterDirsMain = mainCornerDotsCache.map(() => new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize());
+            scatterDirsEdge = edgeInternalDotsCache.map(() => new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize());
+
+            const baseSphereMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const sphereGeo = new THREE.SphereGeometry(params.anchorSize3D, 12, 12);
+
+            const instancedCorners = new THREE.InstancedMesh(sphereGeo, baseSphereMat, mainCornerDots.length); instancedCorners.name = "SphereAnchorsMain";
+            const m1 = new THREE.Matrix4();
+            for (let i = 0; i < mainCornerDots.length; i++) {
+                m1.compose(mainCornerDots[i].pos, new THREE.Quaternion(), mainCornerDots[i].visible ? new THREE.Vector3(1,1,1) : new THREE.Vector3(0,0,0));
+                instancedCorners.setMatrixAt(i, m1); 
+                instancedCorners.setColorAt(i, new THREE.Color(getPaletteColorHex(i + 5000)));
+            }
+            generated3DGroup.add(instancedCorners);
+
+            if (edgeInternalDots.length > 0) {
+                const instancedEdges = new THREE.InstancedMesh(sphereGeo, baseSphereMat, edgeInternalDots.length); instancedEdges.name = "SphereAnchorsEdges";
+                const m2 = new THREE.Matrix4();
+                for (let i = 0; i < edgeInternalDots.length; i++) {
+                    m2.compose(edgeInternalDots[i].pos, new THREE.Quaternion(), edgeInternalDots[i].visible ? new THREE.Vector3(1,1,1) : new THREE.Vector3(0,0,0));
+                    instancedEdges.setMatrixAt(i, m2); 
+                    instancedEdges.setColorAt(i, new THREE.Color(getPaletteColorHex(i + 10000)));
+                }
+                generated3DGroup.add(instancedEdges);
+            }
+
+            const maxLines = Math.max(interactiveDotsArray.length, globalStructuralEdges.length);
+            const lineGeo = new THREE.BufferGeometry(); lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(maxLines * 6), 3));
+            const interactLineMat = new THREE.LineBasicMaterial({ color: params.interactionColor, transparent: true, opacity: 0.9, linewidth: 2 });
+            
+            if (interactionLinesMesh) { interactionLinesMesh.geometry.dispose(); interactionLinesMesh.material.dispose(); generated3DGroup.remove(interactionLinesMesh); }
+            interactionLinesMesh = new THREE.LineSegments(lineGeo, interactLineMat); interactionLinesMesh.frustumCulled = false; generated3DGroup.add(interactionLinesMesh);
+
+            generated3DGroup.add(solidMesh);
+            
+            if(!params.growthMode) applyViewMode();
+        }
+
+        function initGrowthAnimation() {
+            if (basePoly.length === 0 || finalTargetPoints.length === 0) return alert("Please draw graphics and generate the model first!");
+            
+            params.growthMode = true; 
+            growthGroup.clear(); 
+            growthData = []; 
+            meshOpacity = 0.0;
+            
+            const maxDots = Math.pow(2, params.growthBinaryStages); 
+            const sphereGeo = new THREE.SphereGeometry(params.anchorSize3D * 0.8, 8, 8); 
+            const sphereMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1.0 });
+            growthDotsMesh = new THREE.InstancedMesh(sphereGeo, sphereMat, maxDots);
+            growthGroup.add(growthDotsMesh);
+
+            const paddedTargets = [];
+            const flatCache = [...mainCornerDotsCache, ...edgeInternalDotsCache];
+
+            for (let i = 0; i < maxDots; i++) {
+                const refDot = flatCache[i % flatCache.length] || { pos: centralPoint, visible: true };
+                paddedTargets.push(refDot);
+            }
+
+            const treePositions = []; 
+            for (let level = 0; level <= params.growthBinaryStages; level++) {
+                const groupSize = Math.pow(2, params.growthBinaryStages - level);
+                const levelPos = [];
+                for (let i = 0; i < maxDots; i++) {
+                    const groupStart = Math.floor(i / groupSize) * groupSize;
+                    let sum = new THREE.Vector3();
+                    for (let j = 0; j < groupSize; j++) sum.add(paddedTargets[groupStart + j].pos);
+                    sum.divideScalar(groupSize);
+                    levelPos.push(sum);
+                }
+                treePositions.push(levelPos);
+            }
+
+            for (let i = 0; i < maxDots; i++) {
+                growthData.push({ 
+                    path: treePositions.map(levelArray => levelArray[i]), 
+                    currentPos: treePositions[0][i].clone(),
+                    visible: paddedTargets[i].visible 
                 });
             }
 
-            document.getElementById('stat-vertices').innerText = vertices.toLocaleString();
-            document.getElementById('stat-polygons').innerText = Math.round(polygons).toLocaleString();
-        }
-
-        function resetCameraAngle() {
-            controls.reset();
-            camera.position.set(0, 0, 22);
-            controls.target.set(0, 0, 0);
-        }
-
-        // Toggle Custom Dimension Field Display
-        function toggleCustomResField() {
-            const selectVal = document.getElementById('export-res').value;
-            const customWrapper = document.getElementById('custom-res-wrapper');
-            state.exportRes = selectVal;
-
-            if (selectVal === 'custom') {
-                customWrapper.classList.remove('hidden');
-            } else {
-                customWrapper.classList.add('hidden');
+            const m = new THREE.Matrix4();
+            for (let i = 0; i < maxDots; i++) {
+                m.compose(growthData[i].currentPos, new THREE.Quaternion(), growthData[i].visible ? new THREE.Vector3(1,1,1) : new THREE.Vector3(0,0,0));
+                growthDotsMesh.setMatrixAt(i, m);
+                growthDotsMesh.setColorAt(i, new THREE.Color(getPaletteColorHex(i * 100)));
             }
+            growthDotsMesh.instanceMatrix.needsUpdate = true;
+            if (growthDotsMesh.instanceColor) growthDotsMesh.instanceColor.needsUpdate = true;
+            
+            generated3DGroup.visible = false; growthGroup.visible = true; controls.autoRotate = false; 
+            
+            const solid = generated3DGroup.getObjectByName("SolidMesh"); if (solid) { solid.material.transparent = true; solid.material.opacity = 0; }
+            const wire = generated3DGroup.getObjectByName("WireframeMesh"); if (wire) { wire.material.transparent = true; wire.material.opacity = 0; }
+            const mainAnchors = generated3DGroup.getObjectByName("SphereAnchorsMain"); if (mainAnchors) { mainAnchors.material.transparent = true; mainAnchors.material.opacity = 0; }
+            const edgeAnchors = generated3DGroup.getObjectByName("SphereAnchorsEdges"); if (edgeAnchors) { edgeAnchors.material.transparent = true; edgeAnchors.material.opacity = 0; }
+
+            generated3DGroup.rotation.set(0,0,0); generated3DGroup.position.set(0,0,0); generated3DGroup.scale.set(1,1,1);
+            growthStartTime = performance.now() * 0.001;
         }
 
-        // High Resolution Camera capturing engine
-        function triggerHighResExport() {
-            const resolutionMap = {
-                '1080p': { w: 1920, h: 1080 },
-                '4k': { w: 3840, h: 2160 },
-                '8k': { w: 7680, h: 4320 },
-                'custom': {
-                    w: parseInt(document.getElementById('custom-w').value) || 1920,
-                    h: parseInt(document.getElementById('custom-h').value) || 1080
+        function updateDotColors() {
+            renderSVG(); 
+            if (params.generate3D !== '2D SVG Mode') {
+                const mainAnchors = generated3DGroup.getObjectByName("SphereAnchorsMain");
+                const edgeAnchors = generated3DGroup.getObjectByName("SphereAnchorsEdges");
+                if (mainAnchors) {
+                    for (let i = 0; i < mainAnchors.count; i++) mainAnchors.setColorAt(i, new THREE.Color(getPaletteColorHex(i + 5000)));
+                    mainAnchors.instanceColor.needsUpdate = true;
                 }
-            };
-
-            const targetRes = resolutionMap[state.exportRes] || resolutionMap['1080p'];
-            
-            showNotification(`Preparing high resolution ${targetRes.w}x${targetRes.h} PNG...`, "info");
-
-            // Temporary variables storing standard canvas parameters
-            const canvasContainer = document.getElementById('canvas-container');
-            const originalWidth = canvasContainer.clientWidth;
-            const originalHeight = canvasContainer.clientHeight;
-            const originalAspect = camera.aspect;
-
-            // Remove visual aid grid helpers during camera capture
-            const isGridActive = state.showGrid;
-            if (isGridActive && gridHelper) {
-                scene.remove(gridHelper);
-            }
-
-            // Expand ThreeJS viewport mapping to custom resolutions
-            renderer.setSize(targetRes.w, targetRes.h, false);
-            camera.aspect = targetRes.w / targetRes.h;
-            camera.updateProjectionMatrix();
-
-            // Direct render tick mapping
-            renderer.render(scene, camera);
-
-            try {
-                // Generate and download image via standard anchor
-                const dataURL = renderer.domElement.toDataURL('image/png');
-                
-                const link = document.createElement('a');
-                link.download = `3d-flat-extrusion-${targetRes.w}x${targetRes.h}-${Date.now()}.png`;
-                link.href = dataURL;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-
-                showNotification("Export completed successfully!", "success");
-            } catch (err) {
-                showNotification(`Export failed: ${err.message}`, "error");
-                console.error(err);
-            } finally {
-                // Revert canvas dimensions to layout container boundaries
-                renderer.setSize(originalWidth, originalHeight, true);
-                camera.aspect = originalAspect;
-                camera.updateProjectionMatrix();
-
-                // Restore grid layout if formerly present
-                if (isGridActive && gridHelper) {
-                    scene.add(gridHelper);
+                if (edgeAnchors) {
+                    for (let i = 0; i < edgeAnchors.count; i++) edgeAnchors.setColorAt(i, new THREE.Color(getPaletteColorHex(i + 10000)));
+                    edgeAnchors.instanceColor.needsUpdate = true;
                 }
-
-                // Render frame back to baseline state
-                renderer.render(scene, camera);
             }
         }
 
-        // Accordion collapsing mechanics
-        function toggleAccordion(id) {
-            const content = document.getElementById(`${id}-content`);
-            const icon = document.getElementById(`${id}-icon`);
+        function updateInteractionColor() {
+            if (interactionLinesMesh) interactionLinesMesh.material.color.set(params.interactionColor);
+        }
+
+        function resize() {
+            camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); 
+            renderer.setSize(window.innerWidth, window.innerHeight); applyView2D();
             
-            if (content.classList.contains('open')) {
-                content.classList.remove('open');
-                icon.style.transform = 'rotate(180deg)';
-            } else {
-                content.classList.add('open');
-                icon.style.transform = 'rotate(0deg)';
+            const wire = generated3DGroup.getObjectByName("WireframeMesh");
+            if (wire && wire.material.resolution) {
+                wire.material.resolution.set(window.innerWidth, window.innerHeight);
             }
         }
+        window.addEventListener('resize', resize); resize();
+        updateBackground();
 
-        // Dynamic Toast Notifications
-        function showNotification(message, type = 'info') {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            
-            // Standardizing styling presets
-            let bg = 'bg-slate-900 border-slate-700 text-slate-100';
-            let icon = '<i class="fa-solid fa-circle-info text-blue-400"></i>';
+        // ==========================================
+        // GUI Panel Build
+        // ==========================================
+        const gui = new GUI({ title: 'Strict Dash Console' });
 
-            if (type === 'success') {
-                bg = 'bg-slate-900 border-emerald-500/30 text-slate-100';
-                icon = '<i class="fa-solid fa-circle-check text-emerald-400"></i>';
-            } else if (type === 'error') {
-                bg = 'bg-slate-900 border-rose-500/30 text-slate-100';
-                icon = '<i class="fa-solid fa-circle-exclamation text-rose-400"></i>';
-            } else if (type === 'warning') {
-                bg = 'bg-slate-900 border-amber-500/30 text-slate-100';
-                icon = '<i class="fa-solid fa-triangle-exclamation text-amber-400"></i>';
-            }
+        const folder1 = gui.addFolder('1. 2D Path Drawing & Import');
+        folder1.add(params, 'uploadSVG').name('📂 Import External SVG');
+        folder1.add(params, 'textString').name('📝 Enter Text');
+        folder1.add(params, 'addText').name('🔤 Import Text as Shape');
 
-            toast.className = `flex items-center space-x-3 px-4 py-3 rounded-xl border shadow-xl transform translate-y-3 opacity-0 transition-all duration-300 ${bg}`;
-            toast.innerHTML = `
-                ${icon}
-                <span class="text-xs font-semibold leading-relaxed">${message}</span>
-            `;
+        folder1.add(params, 'pointType', ['Sharp', 'Curve']).name('✒️ Point Type');
+        folder1.add(params, 'gridSnap').name('Snap to Grid (20px)');
+        folder1.add(params, 'edgeDots', 0, 15, 1).name('📏 Line Subdivisions').onChange(() => { renderSVG(); if(params.generate3D !== '2D SVG Mode') generate3D(); });
+        folder1.add(params, 'undo').name('↩️ Undo'); folder1.add(params, 'clearActive').name('🗑️ Clear Active Line');
 
-            container.appendChild(toast);
+        const folder2 = gui.addFolder('2. 2D Boolean');
+        folder2.add(params, 'setBase').name('⬇️ Set Base Shape'); folder2.add(params, 'csgAdd').name('➕ Union'); folder2.add(params, 'csgSubtract').name('✂️ Subtract Hole'); folder2.add(params, 'clearBase').name('🗑️ Clear All');
 
-            // Trigger animation frame queueing
-            setTimeout(() => {
-                toast.classList.remove('opacity-0', 'translate-y-3');
-            }, 50);
+        const folder3 = gui.addFolder('3. 3D Generation');
+        folder3.add(params, 'generate3D', ['2D SVG Mode', 'Extrude', 'Revolve']).name('Mode').onChange(setMode);
+        folder3.add(params, 'extrudeDepth', 0.5, 10).name('Extrude Depth').onChange(() => { if(params.generate3D === 'Extrude') generate3D(); });
+        folder3.add(params, 'revolveSegments', 3, 64, 1).name('🔄 Revolve Segments').onChange(() => { if(params.generate3D === 'Revolve') generate3D(); });
+        folder3.add(params, 'revolveAngle', 10, 360, 1).name('📐 Revolve Angle').onChange(() => { if(params.generate3D === 'Revolve') generate3D(); });
+        folder3.add(params, 'revolvePillars', 2, 16, 1).name('🏛️ Revolve Pillars').onChange(() => { if(params.generate3D === 'Revolve') generate3D(); });
 
-            // Automatic removal
-            setTimeout(() => {
-                toast.classList.add('opacity-0', 'translate-y-3');
-                setTimeout(() => {
-                    toast.remove();
-                }, 300);
-            }, 3500);
+        const folder4 = gui.addFolder('4. Appearance & Density');
+        folder4.add(params, 'viewMode', ['Full color', 'Wireframe (See-through)', 'Wireframe (Solid back)', 'Dots + Wireframe (See-through)', 'Dots + Wireframe (Solid back)', 'Only Dots']).name('View Mode').onChange(applyViewMode);
+        folder4.add(params, 'lineThickness', 1.0, 15.0, 0.5).name('✏️ Line Thickness').onChange(() => { 
+            const wire = generated3DGroup.getObjectByName("WireframeMesh");
+            if (wire && wire.material.linewidth !== undefined) wire.material.linewidth = params.lineThickness;
+            renderSVG(); 
+        });
+        folder4.add(params, 'dotDisplayRatio', 0.0, 1.0, 0.01).name('🌌 Dot Display Ratio').onChange(() => { if(params.generate3D !== '2D SVG Mode') generate3D(); });
+        folder4.add(params, 'lineDisplayRatio', 0.0, 1.0, 0.01).name('🕸️ Line Display Ratio').onChange(() => { if(params.generate3D !== '2D SVG Mode') generate3D(); });
+        folder4.add(params, 'backgroundColor', ['Dark (Black)', 'Light (White)']).name('Background').onChange(updateBackground);
+        folder4.addColor(params, 'objectColor').name('Object Color').onChange(() => {
+            const solid = generated3DGroup.getObjectByName("SolidMesh");
+            if (solid) solid.material.color.set(params.objectColor); renderSVG(); 
+        });
+        folder4.add(params, 'anchorSize3D', 0.05, 0.6).name('Dot Size 3D').onChange(() => { if(params.generate3D !== '2D SVG Mode') generate3D(); });
+
+        const folder5 = gui.addFolder('5. Camera & Perspective');
+        folder5.add(params, 'cameraView', ['Free', 'Isometric', 'Front', 'Back', 'Side (Right)', 'Side (Left)', 'Top']).name('Camera Angle').onChange((val) => { controls.enableRotate = (val === 'Free' && params.generate3D !== '2D SVG Mode'); setCameraView(); });
+        folder5.add(params, 'cameraFOV', 10, 150, 1).name('👁️ Camera FOV').onChange(() => { camera.fov = params.cameraFOV; camera.updateProjectionMatrix(); });
+
+        const folder6 = gui.addFolder('6. Interactive Experience');
+        folder6.add(params, 'interactionMode').name('⚡ Enable Hover Reveal'); folder6.add(params, 'interactionStyle', ['Reveal Edges', 'Mouse to Dots']).name('🔗 Interaction Style'); folder6.add(params, 'interactionRadius', 1.0, 20.0, 0.5).name('🧲 Sensor Radius'); folder6.addColor(params, 'interactionColor').name('✨ Connection Color').onChange(updateInteractionColor); 
+        folder6.add(params, 'scatterEffect').name('💥 Enable Scatter Effect'); folder6.add(params, 'scatterMaxRadius', 5, 50, 1).name('☄️ Max Scatter Radius'); folder6.add(params, 'scatterSafeZone', 0.0, 0.8, 0.05).name('🎯 Scatter Safe Zone');
+
+        const folder7 = gui.addFolder('7. Motion & Generative Growth');
+        folder7.add(params, 'autoRotate').name('🌀 Auto Rotate'); folder7.add(params, 'rotateSpeed', -5.0, 5.0, 0.1).name('Rotation Speed');
+        folder7.add(params, 'hoverEffect').name('🌊 Hover Effect'); folder7.add(params, 'hoverSpeed', 0.1, 5.0, 0.1).name('Hover Speed');
+        folder7.add(params, 'pulseEffect').name('💓 Pulse Effect'); folder7.add(params, 'pulseSpeed', 0.1, 5.0, 0.1).name('Pulse Speed');
+        
+        folder7.add(params, 'growthMode').name('🌟 Enable Generative Growth').onChange(() => { 
+            if(!params.growthMode) { 
+                growthGroup.visible = false; generated3DGroup.visible = true; 
+                generated3DGroup.scale.set(1,1,1); generated3DGroup.position.set(0,0,0);
+                const solid = generated3DGroup.getObjectByName("SolidMesh"); if(solid && (params.viewMode.includes('Full color') || params.viewMode.includes('(Solid back)'))) { solid.material.transparent = false; solid.material.opacity = 1.0;}
+                const wire = generated3DGroup.getObjectByName("WireframeMesh"); if(wire && params.viewMode.includes('Wireframe')) { wire.material.transparent = true; wire.material.opacity = 0.8;}
+                applyViewMode();
+            } 
+        });
+        folder7.add(params, 'growthBinaryStages', 2, 9, 1).name('🌳 Growth Stages (2^N)').onFinishChange(generate3D); 
+        folder7.add(params, 'growthSpeed', 0.1, 3.0, 0.1).name('⏳ Growth Speed');
+        folder7.add(params, 'startGrowthAnimation').name('💥 Start Growth Animation!');
+
+        const folder8 = gui.addFolder('8. Export');
+        folder8.add(params, 'exportJPG').name('📸 Export JPG Image');
+
+        let paletteFolder = null;
+        function buildPaletteGUI() {
+            if (paletteFolder) paletteFolder.destroy();
+            paletteFolder = gui.addFolder('🎨 Custom Dots Palette');
+            paletteFolder.add(params, 'addColor').name('➕ Add Random Color'); paletteFolder.add(params, 'removeColor').name('➖ Remove Last Color');
+            params.colorPalette.forEach((color, index) => { paletteFolder.addColor(params.colorPalette, index).name(`Color ${index + 1}`).onChange(updateDotColors); });
         }
+        buildPaletteGUI(); 
 
-        // Global animation tick mapping
         function animate() {
             requestAnimationFrame(animate);
-
-            if (state.autoRotate && mainObjectGroup) {
-                // Smooth rotation mapping
-                mainObjectGroup.rotation.y += 0.008;
-                
-                // Update slider UI values smoothly to reflect live continuous spin
-                let currentDeg = Math.round(THREE.MathUtils.radToDeg(mainObjectGroup.rotation.y) % 360);
-                if (currentDeg > 180) currentDeg -= 360;
-                if (currentDeg < -180) currentDeg += 360;
-                
-                document.getElementById('range-rotY').value = currentDeg;
-                document.getElementById('val-rotY').innerText = currentDeg + '°';
-                state.rotY = currentDeg;
+            if (params.cameraView !== 'Free' && params.generate3D !== '2D SVG Mode' && controls.enableRotate) {
+                 params.cameraView = 'Free'; folder5.controllersRecursive().forEach(c => c.updateDisplay());
             }
 
-            controls.update();
+            const time = performance.now() * 0.001;
+
+            if (params.growthMode && params.generate3D !== '2D SVG Mode' && growthDotsMesh) {
+                const dummy = new THREE.Object3D();
+                const totalPoints = growthDotsMesh.count;
+                const animTime = (time - growthStartTime) * params.growthSpeed;
+                const stageDuration = 1.0; 
+
+                let currentGlobalLevelFloat = animTime / stageDuration;
+                let isFullySettled = false;
+
+                if (currentGlobalLevelFloat >= params.growthBinaryStages) {
+                    currentGlobalLevelFloat = params.growthBinaryStages;
+                    isFullySettled = true;
+                }
+
+                const currentLevelInt = Math.floor(currentGlobalLevelFloat);
+                const t = easeInOutCubic(currentGlobalLevelFloat - currentLevelInt); 
+
+                for (let i = 0; i < totalPoints; i++) {
+                    const data = growthData[i];
+                    
+                    if (isFullySettled) {
+                        dummy.position.copy(data.path[params.growthBinaryStages]);
+                    } else {
+                        const startPos = data.path[currentLevelInt];
+                        const endPos = data.path[currentLevelInt + 1];
+                        dummy.position.lerpVectors(startPos, endPos, t);
+                    }
+                    
+                    dummy.scale.setScalar(data.visible ? 1 : 0); 
+                    dummy.updateMatrix(); 
+                    growthDotsMesh.setMatrixAt(i, dummy.matrix);
+                }
+                growthDotsMesh.instanceMatrix.needsUpdate = true;
+
+                if (isFullySettled && !generated3DGroup.visible) {
+                    generated3DGroup.visible = true; 
+                    applyViewMode(); 
+                    
+                    const solid = generated3DGroup.getObjectByName("SolidMesh"); if(solid) solid.material.opacity = 0;
+                    const wire = generated3DGroup.getObjectByName("WireframeMesh"); if(wire) wire.material.opacity = 0;
+                    const mainAnchors = generated3DGroup.getObjectByName("SphereAnchorsMain"); if(mainAnchors) mainAnchors.material.opacity = 0;
+                    const edgeAnchors = generated3DGroup.getObjectByName("SphereAnchorsEdges"); if(edgeAnchors) edgeAnchors.material.opacity = 0;
+                }
+
+                if (generated3DGroup.visible) {
+                    meshOpacity += 0.02; 
+                    meshOpacity = Math.min(1.0, meshOpacity);
+                    
+                    growthDotsMesh.material.opacity = 1.0 - meshOpacity; 
+
+                    const solid = generated3DGroup.getObjectByName("SolidMesh");
+                    if(solid && (params.viewMode.includes('Full color') || params.viewMode.includes('(Solid back)'))) solid.material.opacity = meshOpacity;
+                    
+                    const wire = generated3DGroup.getObjectByName("WireframeMesh");
+                    if(wire && params.viewMode.includes('Wireframe')) wire.material.opacity = meshOpacity * 0.8;
+                    
+                    const mainAnchors = generated3DGroup.getObjectByName("SphereAnchorsMain");
+                    if(mainAnchors && (params.viewMode.includes('Dots') || params.viewMode === 'Only Dots')) mainAnchors.material.opacity = meshOpacity;
+                    
+                    const edgeAnchors = generated3DGroup.getObjectByName("SphereAnchorsEdges");
+                    if(edgeAnchors && (params.viewMode.includes('Dots') || params.viewMode === 'Only Dots')) edgeAnchors.material.opacity = meshOpacity;
+
+                    if (meshOpacity >= 1.0) {
+                        params.growthMode = false;
+                        growthGroup.visible = false;
+                        gui.controllersRecursive().forEach(c => c.updateDisplay());
+                    }
+                }
+                generated3DGroup.updateMatrixWorld(); 
+
+            } else if (params.generate3D !== '2D SVG Mode') {
+                if (params.autoRotate) generated3DGroup.rotation.y += params.rotateSpeed * 0.01;
+                if (params.hoverEffect) generated3DGroup.position.y = Math.sin(time * params.hoverSpeed) * 1.5;
+                else generated3DGroup.position.y = THREE.MathUtils.lerp(generated3DGroup.position.y, 0, 0.1);
+                if (params.pulseEffect) { const scale = 1.0 + Math.sin(time * params.pulseSpeed) * 0.03; generated3DGroup.scale.set(scale, scale, scale); }
+                else generated3DGroup.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
+                generated3DGroup.updateMatrixWorld();
+            }
+
+            let targetScatter = 0;
+            if (params.scatterEffect && params.generate3D !== '2D SVG Mode' && !params.growthMode && mouse2D.x !== -9999) {
+                const distFromCenter = Math.min(1.0, mouse2D.length()); 
+                if (distFromCenter > params.scatterSafeZone) {
+                    const activeDist = (distFromCenter - params.scatterSafeZone) / (1.0 - params.scatterSafeZone);
+                    targetScatter = (activeDist * activeDist) * params.scatterMaxRadius; 
+                } else {
+                    targetScatter = 0; 
+                }
+            }
+            currentScatterValue = THREE.MathUtils.lerp(currentScatterValue, targetScatter, 0.08);
+
+            if (currentScatterValue > 0.01 && params.generate3D !== '2D SVG Mode' && !params.growthMode) {
+                const dummy = new THREE.Object3D();
+                const mainAnchors = generated3DGroup.getObjectByName("SphereAnchorsMain");
+                if (mainAnchors) {
+                    for (let i = 0; i < mainCornerDotsCache.length; i++) {
+                        dummy.scale.setScalar(mainCornerDotsCache[i].visible ? 1 : 0);
+                        dummy.position.copy(mainCornerDotsCache[i].pos).addScaledVector(scatterDirsMain[i], currentScatterValue);
+                        dummy.updateMatrix(); mainAnchors.setMatrixAt(i, dummy.matrix);
+                    }
+                    mainAnchors.instanceMatrix.needsUpdate = true;
+                }
+                const edgeAnchors = generated3DGroup.getObjectByName("SphereAnchorsEdges");
+                if (edgeAnchors) {
+                    for (let i = 0; i < edgeInternalDotsCache.length; i++) {
+                        dummy.scale.setScalar(edgeInternalDotsCache[i].visible ? 1 : 0);
+                        dummy.position.copy(edgeInternalDotsCache[i].pos).addScaledVector(scatterDirsEdge[i], currentScatterValue);
+                        dummy.updateMatrix(); edgeAnchors.setMatrixAt(i, dummy.matrix);
+                    }
+                    edgeAnchors.instanceMatrix.needsUpdate = true;
+                }
+                
+                const solid = generated3DGroup.getObjectByName("SolidMesh");
+                const wire = generated3DGroup.getObjectByName("WireframeMesh");
+                if (solid) solid.visible = false;
+                if (wire) wire.visible = false;
+                
+            } else if (params.generate3D !== '2D SVG Mode' && !params.growthMode) {
+                if (currentScatterValue > 0) {
+                    currentScatterValue = 0;
+                    const dummy = new THREE.Object3D();
+                    const mainAnchors = generated3DGroup.getObjectByName("SphereAnchorsMain");
+                    if (mainAnchors) {
+                        for (let i = 0; i < mainCornerDotsCache.length; i++) {
+                            dummy.scale.setScalar(mainCornerDotsCache[i].visible ? 1 : 0);
+                            dummy.position.copy(mainCornerDotsCache[i].pos); dummy.updateMatrix(); mainAnchors.setMatrixAt(i, dummy.matrix);
+                        }
+                        mainAnchors.instanceMatrix.needsUpdate = true;
+                    }
+                    const edgeAnchors = generated3DGroup.getObjectByName("SphereAnchorsEdges");
+                    if (edgeAnchors) {
+                        for (let i = 0; i < edgeInternalDotsCache.length; i++) {
+                            dummy.scale.setScalar(edgeInternalDotsCache[i].visible ? 1 : 0);
+                            dummy.position.copy(edgeInternalDotsCache[i].pos); dummy.updateMatrix(); edgeAnchors.setMatrixAt(i, dummy.matrix);
+                        }
+                        edgeAnchors.instanceMatrix.needsUpdate = true;
+                    }
+                    applyViewMode(); 
+                }
+            }
+
+            if (params.interactionMode && params.generate3D !== '2D SVG Mode' && !params.growthMode && interactionLinesMesh && mouse2D.x !== -9999) {
+                interactionLinesMesh.visible = true;
+                const globalWireframe = generated3DGroup.getObjectByName("WireframeMesh");
+                if (globalWireframe) globalWireframe.visible = false;
+                
+                raycaster.setFromCamera(mouse2D, camera);
+                let intersectPoint = new THREE.Vector3(); let hit = false;
+                const solid = generated3DGroup.getObjectByName("SolidMesh");
+                if (solid) { const intersects = raycaster.intersectObject(solid); if (intersects.length > 0) { intersectPoint.copy(intersects[0].point); hit = true; } }
+                if (!hit) raycaster.ray.intersectPlane(invisiblePlane, intersectPoint);
+                
+                if (intersectPoint) {
+                    let localIntersectPoint = intersectPoint.clone();
+                    generated3DGroup.worldToLocal(localIntersectPoint);
+
+                    const positions = interactionLinesMesh.geometry.attributes.position.array;
+                    let count = 0;
+
+                    if (params.interactionStyle === 'Reveal Edges') {
+                        for (let i = 0; i < globalStructuralEdges.length; i++) {
+                            const edge = globalStructuralEdges[i];
+                            const p1Real = edge.p1.clone().addScaledVector(scatterDirsMain[i % scatterDirsMain.length] || new THREE.Vector3(), currentScatterValue);
+                            const p2Real = edge.p2.clone().addScaledVector(scatterDirsEdge[i % scatterDirsEdge.length] || new THREE.Vector3(), currentScatterValue);
+
+                            if (p1Real.distanceTo(localIntersectPoint) < params.interactionRadius || p2Real.distanceTo(localIntersectPoint) < params.interactionRadius) {
+                                positions[count * 6] = p1Real.x;     positions[count * 6 + 1] = p1Real.y; positions[count * 6 + 2] = p1Real.z;
+                                positions[count * 6 + 3] = p2Real.x; positions[count * 6 + 4] = p2Real.y; positions[count * 6 + 5] = p2Real.z; count++;
+                            }
+                        }
+                    } else {
+                        for (let i = 0; i < mainCornerDotsCache.length; i++) {
+                            const dot = mainCornerDotsCache[i].clone().addScaledVector(scatterDirsMain[i], currentScatterValue);
+                            if (dot.distanceTo(localIntersectPoint) < params.interactionRadius) {
+                                positions[count * 6] = localIntersectPoint.x; positions[count * 6 + 1] = localIntersectPoint.y; positions[count * 6 + 2] = localIntersectPoint.z;
+                                positions[count * 6 + 3] = dot.x;        positions[count * 6 + 4] = dot.y;        positions[count * 6 + 5] = dot.z; count++;
+                            }
+                        }
+                        for (let i = 0; i < edgeInternalDotsCache.length; i++) {
+                            const dot = edgeInternalDotsCache[i].clone().addScaledVector(scatterDirsEdge[i], currentScatterValue);
+                            if (dot.distanceTo(localIntersectPoint) < params.interactionRadius) {
+                                positions[count * 6] = localIntersectPoint.x; positions[count * 6 + 1] = localIntersectPoint.y; positions[count * 6 + 2] = localIntersectPoint.z;
+                                positions[count * 6 + 3] = dot.x;        positions[count * 6 + 4] = dot.y;        positions[count * 6 + 5] = dot.z; count++;
+                            }
+                        }
+                    }
+                    interactionLinesMesh.geometry.setDrawRange(0, count * 2);
+                    interactionLinesMesh.geometry.attributes.position.needsUpdate = true;
+                }
+            } else {
+                if (interactionLinesMesh) interactionLinesMesh.visible = false;
+                if (!params.scatterEffect || currentScatterValue === 0) if(!params.growthMode) applyViewMode();
+            }
+
             renderer.render(scene, camera);
         }
+        animate();
     </script>
 </body>
 </html>
