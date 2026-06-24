@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dash</title>
+    <title>DashTool</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #1a1a1a; font-family: sans-serif; }
         #canvas-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
@@ -31,12 +31,6 @@
 <body>
     <input type="file" id="svg-upload-input" accept=".svg" style="display: none;" />
 
-    <div id="instructions">
-        <h3>Advanced Dash Controls</h3>
-        <p>1. <b>🌟 Import System</b>: Perfectly supports external SVG import and 3D text generation!</p>
-        <p>2. <b>🌟 Visual Controls</b>: Freely adjust true line thickness, dynamically hide dots, and use Solid Back wireframes.</p>
-        <p>3. <b>🌟 Export Image</b>: Use Folder 8 to export a high-res JPG perfectly matching your screen.</p>
-    </div>
 
     <svg id="svg-editor" xmlns="http://www.w3.org/2000/svg">
         <defs>
@@ -64,6 +58,11 @@
         import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
         import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
         import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+        
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
+
         import GUI from 'lil-gui';
         import polygonClipping from 'polygon-clipping';
 
@@ -89,7 +88,6 @@
         const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.set(0, 0, 30);
 
-        // Enable preserveDrawingBuffer to allow screenshot captures
         const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
@@ -98,6 +96,17 @@
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.enableRotate = false;
+
+        const composer = new EffectComposer(renderer);
+        const renderPass = new RenderPass(scene, camera);
+        composer.addPass(renderPass);
+
+        const outlinePass = new OutlinePass(new THREE.Vector2(window.innerWidth, window.innerHeight), scene, camera);
+        outlinePass.edgeStrength = 5.0; 
+        outlinePass.edgeThickness = 2.0;
+        outlinePass.visibleEdgeColor.set('#ffffff');
+        outlinePass.hiddenEdgeColor.set('#ffffff'); 
+        composer.addPass(outlinePass);
 
         let generated3DGroup = new THREE.Group();
         scene.add(generated3DGroup);
@@ -136,13 +145,12 @@
                 document.getElementById('svg-upload-input').click();
             },
             
-            textString: 'CASH',
+            textString: 'CAD',
             addText: () => {
                 if (params.generate3D !== '2D SVG Mode') return alert("Please switch back to '2D SVG Mode' before importing text!");
                 if (params.textString.trim() === '') return alert("Please enter the text to generate!");
                 
                 const loader = new FontLoader();
-                // Replace URL with your custom JSON font path if needed
                 const fontUrl = 'https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json';
 
                 loader.load(fontUrl, function (font) {
@@ -154,7 +162,7 @@
 
                     shapes.forEach(shape => {
                         let poly = [];
-                        let outer = shape.getPoints(3); 
+                        let outer = shape.getPoints(15); 
                         if (outer.length > 2) {
                             outer.forEach(p => {
                                 minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
@@ -166,7 +174,7 @@
 
                             if (shape.holes && shape.holes.length > 0) {
                                 shape.holes.forEach(hole => {
-                                    let holePts = hole.getPoints(3);
+                                    let holePts = hole.getPoints(15); 
                                     if (holePts.length > 2) {
                                         holePts.forEach(p => {
                                             minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
@@ -187,7 +195,6 @@
                     const cx = (minX + maxX) / 2; const cy = (minY + maxY) / 2;
                     const scaleFactor = 400 / (maxX - minX || 1); 
 
-                    // Fix inversion by mapping to positive Y axis
                     importedPolys = importedPolys.map(poly => 
                         poly.map(ring => ring.map(p => [(p[0] - cx) * scaleFactor, (p[1] - cy) * scaleFactor]))
                     );
@@ -224,6 +231,10 @@
             objectColor: '#44aa88',
             anchorSize3D: 0.15,
 
+            showSilhouette: true,
+            silhouetteThickness: 2.0,
+            silhouetteColor: '#ffffff',
+
             lineThickness: 2.0,
             dotDisplayRatio: 0.5,
             lineDisplayRatio: 1.0,
@@ -257,9 +268,13 @@
             startGrowthAnimation: () => { if(params.generate3D !== '2D SVG Mode') initGrowthAnimation(); else alert("Please switch to a 3D Mode first!"); },
 
             exportJPG: () => {
-                renderer.render(scene, camera); 
+                if (params.showSilhouette && params.generate3D !== '2D SVG Mode') {
+                    composer.render();
+                } else {
+                    renderer.render(scene, camera); 
+                }
+                
                 const canvas = document.createElement('canvas');
-                // High-res export matching WebGL buffer
                 canvas.width = renderer.domElement.width;
                 canvas.height = renderer.domElement.height;
                 const ctx = canvas.getContext('2d');
@@ -277,7 +292,6 @@
                     const url = URL.createObjectURL(svgBlob);
                     
                     img.onload = function() {
-                        // Stretch SVG overlay to match physical pixel resolution
                         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                         URL.revokeObjectURL(url);
                         triggerDownload(canvas.toDataURL('image/jpeg', 0.95));
@@ -289,19 +303,51 @@
 
                 function triggerDownload(dataUrl) {
                     const link = document.createElement('a');
-                    link.download = `Dash_Masterpiece_${new Date().getTime()}.jpg`;
+                    link.download = `CAD_Masterpiece_${new Date().getTime()}.jpg`;
                     link.href = dataUrl;
                     link.click();
                 }
             }
         };
 
-        function getStableRandom(x, y, z) { return (Math.abs(Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453) % 1); }
+        function getFractionLevel(f) {
+            f = ((f % 1.0) + 1.0) % 1.0; 
+            const tol = 0.005; 
+            
+            if (Math.abs(f - 0.0) < tol || Math.abs(f - 1.0) < tol) return 0.0; 
+            if (Math.abs(f - 0.5) < tol) return 0.1; 
+            
+            if (Math.abs(f - 0.25) < tol || Math.abs(f - 0.75) < tol) return 0.2; 
+            for (let i=1; i<=7; i+=2) if (Math.abs(f - i/8.0) < tol) return 0.3; 
+            for (let i=1; i<=15; i+=2) if (Math.abs(f - i/16.0) < tol) return 0.4; 
+            for (let i=1; i<=31; i+=2) if (Math.abs(f - i/32.0) < tol) return 0.5; 
+            for (let i=1; i<=63; i+=2) if (Math.abs(f - i/64.0) < tol) return 0.6; 
+            
+            for (let denom = 3; denom <= 20; denom++) {
+                const j = Math.round(f * denom);
+                if (Math.abs(f - j/denom) < tol) return 0.7 + (denom / 20.0) * 0.2; 
+            }
+            return 0.95; 
+        }
+
+        function getStableRandom(x, y, z, cx = 0, cy = 0, cz = 0) { 
+            const lx = x - cx; const ly = y - cy; const lz = z - cz;
+            const ax = Math.round(Math.abs(lx) * 10);
+            const ay = Math.round(Math.abs(ly) * 10);
+            const az = Math.round(Math.abs(lz) * 10);
+            const seed = Math.abs(Math.sin(ax * 12.9898 + ay * 78.233 + az * 37.719) * 43758.5453);
+            return seed % 1; 
+        }
+
         function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+        
+        function getStableRandomColorSeed(x, y, z) {
+            return Math.abs(Math.sin(Math.round(x*10) * 12.9898 + Math.round(y*10) * 78.233 + Math.round(z*10) * 37.719) * 43758.5453) % 1;
+        }
+
         function getPaletteColorHex(seed) {
             const palette = params.colorPalette; if (palette.length === 0) return '#ffffff';
-            const pseudoRandom = Math.abs(Math.sin(seed * 12.9898) * 43758.5453);
-            return palette[Math.floor((pseudoRandom - Math.floor(pseudoRandom)) * palette.length)];
+            return palette[Math.floor(seed * palette.length)];
         }
 
         function updateBackground() {
@@ -309,10 +355,23 @@
             scene.background = new THREE.Color(isDark ? 0x111111 : 0xffffff);
             if (svgEditor) svgEditor.style.backgroundColor = isDark ? '#111111' : '#ffffff';
             if (gridPath) gridPath.setAttribute('stroke', isDark ? '#2a2a2a' : '#e0e0e0');
+            
             const wireframe = generated3DGroup.getObjectByName("WireframeMesh");
             if (wireframe && wireframe.material.color) {
-                wireframe.material.color.setHex(isDark ? 0x444444 : 0xbbbbbb);
+                // 🌟 Set wireframe to White on Dark Bg, Black on Light Bg
+                wireframe.material.color.setHex(isDark ? 0xffffff : 0x000000);
             }
+
+            params.silhouetteColor = isDark ? '#ffffff' : '#000000';
+            if (typeof outlinePass !== 'undefined' && outlinePass) {
+                outlinePass.visibleEdgeColor.set(params.silhouetteColor);
+                outlinePass.hiddenEdgeColor.set(params.silhouetteColor);
+            }
+            
+            if (typeof gui !== 'undefined') {
+                gui.controllersRecursive().forEach(c => c.updateDisplay());
+            }
+
             applyViewMode();
         }
 
@@ -332,12 +391,30 @@
                 solid.visible = true;
                 solid.material.color.set(params.objectColor);
                 solid.material.opacity = 1.0;
+                solid.material.colorWrite = true;
+                solid.material.depthWrite = true;
             } else if (isHiddenLine) {
                 solid.visible = true;
                 solid.material.color.setHex(params.backgroundColor === 'Dark (Black)' ? 0x111111 : 0xffffff);
                 solid.material.opacity = 1.0;
+                solid.material.colorWrite = true;
+                solid.material.depthWrite = true;
             } else {
-                solid.visible = false;
+                if (params.showSilhouette) {
+                    solid.visible = true;
+                    solid.material.colorWrite = false; 
+                    solid.material.depthWrite = false; 
+                } else {
+                    solid.visible = false;
+                    solid.material.colorWrite = true;
+                    solid.material.depthWrite = true;
+                }
+            }
+
+            if (params.showSilhouette && solid.visible) {
+                outlinePass.selectedObjects = [solid];
+            } else {
+                outlinePass.selectedObjects = [];
             }
 
             if (!params.interactionMode) wire.visible = showWire; else wire.visible = false;
@@ -378,7 +455,7 @@
                 const pEnd   = { x: curr.x + (next.x - curr.x) * t, y: curr.y + (next.y - curr.y) * t };
                 
                 result.push(pStart);
-                const steps = 12; // Lock curve subdivision to high quality
+                const steps = 12; 
                 for (let j = 1; j <= steps; j++) {
                     const u = j / steps; const u1 = 1 - u;
                     result.push({ x: u1*u1*pStart.x + 2*u1*u*curr.x + u*u*pEnd.x, y: u1*u1*pStart.y + 2*u1*u*curr.y + u*u*pEnd.y });
@@ -480,7 +557,7 @@
                         const shapes = SVGLoader.createShapes(path);
                         shapes.forEach(shape => {
                             let poly = [];
-                            let outer = shape.getPoints(2); 
+                            let outer = shape.getPoints(15); 
                             if (outer.length > 2) {
                                 outer.forEach(p => {
                                     minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
@@ -492,7 +569,7 @@
 
                                 if (shape.holes && shape.holes.length > 0) {
                                     shape.holes.forEach(hole => {
-                                        let holePts = hole.getPoints(2);
+                                        let holePts = hole.getPoints(15); 
                                         if (holePts.length > 2) {
                                             holePts.forEach(p => {
                                                 minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
@@ -514,7 +591,6 @@
                     const cx = (minX + maxX) / 2; const cy = (minY + maxY) / 2;
                     const scaleFactor = 400 / (maxX - minX || 1); 
 
-                    // SVG mapping: Negative Y-axis flip
                     importedPolys = importedPolys.map(poly => 
                         poly.map(ring => ring.map(p => [(p[0] - cx) * scaleFactor, -(p[1] - cy) * scaleFactor]))
                     );
@@ -560,6 +636,19 @@
 
             if (anchorDotsGroup) {
                 anchorDotsGroup.innerHTML = '';
+                
+                let bMinX = Infinity, bMaxX = -Infinity, bMinY = Infinity, bMaxY = -Infinity;
+                const updateB = (x, y) => {
+                    if(x < bMinX) bMinX = x; if(x > bMaxX) bMaxX = x;
+                    if(y < bMinY) bMinY = y; if(y > bMaxY) bMaxY = y;
+                };
+                basePoly.forEach(poly => poly.forEach(ring => ring.forEach(pt => updateB(pt[0], pt[1]))));
+                rawAnchors.forEach(pt => updateB(pt.x, pt.y));
+                const cx = bMinX === Infinity ? 0 : (bMinX + bMaxX) / 2;
+                const cy = bMinY === Infinity ? 0 : (bMinY + bMaxY) / 2;
+                const hashCx = cx / SCALE;
+                const hashCy = cy / SCALE;
+
                 basePoly.forEach((poly, pIdx) => {
                     poly.forEach((ring, rIdx) => {
                         for(let i=0; i<ring.length - 1; i++) {
@@ -578,17 +667,19 @@
                     for (let i = 0; i < previewPath.length - 1; i++) {
                         const p1 = previewPath[i]; const p2 = previewPath[i+1];
                         const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-                        const segs = Math.max(1, Math.floor(dist * (params.edgeDots / 150))); 
+                        const segs = Math.max(1, Math.floor((dist/SCALE) * (params.edgeDots / 10))); 
                         for (let j = 1; j < segs; j++) {
-                            const t = j / segs; const pt = { x: p1.x + (p2.x - p1.x)*t, y: p1.y + (p2.y - p1.y)*t };
+                            const t = j / segs; 
+                            const pt = { x: p1.x + (p2.x - p1.x)*t, y: p1.y + (p2.y - p1.y)*t };
                             
-                            // Visual decouple: Hide excess dots visually
-                            if (getStableRandom(pt.x, pt.y, 0) > params.dotDisplayRatio) continue;
+                            const topoLevel = getFractionLevel(t);
+                            if (topoLevel > params.dotDisplayRatio) continue;
                             
                             const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
                             circle.setAttribute('cx', pt.x); circle.setAttribute('cy', pt.y);
                             circle.setAttribute('r', dynamicRadius * 0.7); 
-                            circle.setAttribute('fill', getPaletteColorHex(i*100+j));
+                            const colorSeed = getStableRandomColorSeed(pt.x/SCALE, pt.y/SCALE, 0);
+                            circle.setAttribute('fill', getPaletteColorHex(colorSeed));
                             anchorDotsGroup.appendChild(circle);
                         }
                     }
@@ -599,7 +690,7 @@
                     const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
                     circle.setAttribute('cx', p.x); circle.setAttribute('cy', p.y);
                     circle.setAttribute('r', dynamicRadius * 1.2); 
-                    circle.setAttribute('fill', getPaletteColorHex(i + 9999));
+                    circle.setAttribute('fill', getPaletteColorHex(getStableRandomColorSeed(p.x/SCALE, p.y/SCALE, 0)));
                     
                     if(p.isCurve) {
                         circle.setAttribute('stroke', '#ffffff'); circle.setAttribute('stroke-width', dynamicStroke);
@@ -824,6 +915,13 @@
             const solidMesh = new THREE.Mesh(geometry, solidMat); solidMesh.name = "SolidMesh";
             
             const edgesGeo = new THREE.EdgesGeometry(geometry, 5); 
+            
+            edgesGeo.computeBoundingBox();
+            const bounds = edgesGeo.boundingBox;
+            const minX = bounds ? bounds.min.x : -1, maxX = bounds ? bounds.max.x : 1;
+            const minY = bounds ? bounds.min.y : -1, maxY = bounds ? bounds.max.y : 1;
+            const minZ = bounds ? bounds.min.z : -1, maxZ = bounds ? bounds.max.z : 1;
+
             const edgesPosAttr = edgesGeo.getAttribute('position');
             const filteredEdgesPositions = [];
             
@@ -833,7 +931,63 @@
                 
                 globalStructuralEdges.push({ p1: v1, p2: v2 });
                 
-                if (getStableRandom(v1.x, v1.y, v1.z) <= params.lineDisplayRatio) {
+                let lineLevel = 0.0;
+                const isRing = Math.abs(v1.y - v2.y) < 0.005;
+                
+                if (isRing) {
+                    let isMainY = false;
+                    for(let c of absoluteCorners) {
+                        if(Math.abs(v1.y - c.y) < 0.005) { isMainY = true; break; }
+                    }
+                    if (isMainY) {
+                        lineLevel = 0.0; 
+                    } else {
+                        const fy = maxY > minY ? (v1.y - minY) / (maxY - minY) : 0;
+                        lineLevel = Math.max(0.1, getFractionLevel(fy)); 
+                    }
+                } else {
+                    if (params.generate3D === 'Revolve') {
+                        const a1 = Math.atan2(v1.z, v1.x);
+                        const a2 = Math.atan2(v2.z, v2.x);
+                        let diff = Math.abs(a1 - a2);
+                        if (diff > Math.PI) diff = 2 * Math.PI - diff;
+                        
+                        if (diff < 0.01) {
+                            const fa = (a1 + Math.PI) / (2 * Math.PI);
+                            lineLevel = getFractionLevel(fa); 
+                        } else {
+                            lineLevel = 0.9; 
+                        }
+                    } else {
+                        const dx = Math.abs(v1.x - v2.x);
+                        const dz = Math.abs(v1.z - v2.z);
+                        if (dx < 0.005 && dz < 0.005) {
+                            let isMainPillar = false;
+                            for(let c of absoluteCorners) {
+                                if(Math.hypot(v1.x - c.x, v1.z - c.z) < 0.005) { isMainPillar = true; break; }
+                            }
+                            if (isMainPillar) lineLevel = 0.0;
+                            else {
+                                const fx = maxX > minX ? (v1.x - minX) / (maxX - minX) : 0;
+                                lineLevel = Math.max(0.1, getFractionLevel(fx));
+                            }
+                        } else {
+                            let v1IsCorner = false, v2IsCorner = false;
+                            for(let c of absoluteCorners) {
+                                if(v1.distanceTo(c) < 0.005) v1IsCorner = true;
+                                if(v2.distanceTo(c) < 0.005) v2IsCorner = true;
+                            }
+                            if (v1IsCorner && v2IsCorner) lineLevel = 0.0;
+                            else {
+                                const midX = (v1.x + v2.x) / 2;
+                                const fx = maxX > minX ? (midX - minX) / (maxX - minX) : 0;
+                                lineLevel = Math.max(0.1, getFractionLevel(fx));
+                            }
+                        }
+                    }
+                }
+
+                if (lineLevel <= params.lineDisplayRatio) {
                     filteredEdgesPositions.push(v1.x, v1.y, v1.z, v2.x, v2.y, v2.z);
                 }
             }
@@ -843,7 +997,8 @@
                 lineSegmentsGeo.setPositions(filteredEdgesPositions);
                 const isDark = params.backgroundColor === 'Dark (Black)';
                 const wireMat = new LineMaterial({ 
-                    color: isDark ? 0x444444 : 0xbbbbbb, 
+                    // 🌟 High Contrast wireframe colors
+                    color: isDark ? 0xffffff : 0x000000, 
                     linewidth: params.lineThickness, 
                     transparent: true, 
                     opacity: 0.8,
@@ -868,10 +1023,23 @@
                 for (const c of absoluteCorners) { 
                     if (uv.distanceTo(c) < 0.01) { isMainCorner = true; break; } 
                 }
+                
                 if (isMainCorner) {
                     mainCornerDots.push({ pos: uv, visible: true }); 
                 } else {
-                    const isVis = getStableRandom(uv.x, uv.y, uv.z) <= params.dotDisplayRatio;
+                    let pointLevel = 0;
+                    if (params.generate3D === 'Revolve') {
+                        const fa = (Math.atan2(uv.z, uv.x) + Math.PI) / (2 * Math.PI);
+                        const fy = maxY > minY ? (uv.y - minY) / (maxY - minY) : 0;
+                        pointLevel = Math.max(getFractionLevel(fa), getFractionLevel(fy));
+                    } else {
+                        const fx = maxX > minX ? (uv.x - minX) / (maxX - minX) : 0;
+                        const fy = maxY > minY ? (uv.y - minY) / (maxY - minY) : 0;
+                        const fz = maxZ > minZ ? (uv.z - minZ) / (maxZ - minZ) : 0;
+                        pointLevel = Math.max(getFractionLevel(fx), getFractionLevel(fy), getFractionLevel(fz));
+                    }
+                    
+                    const isVis = pointLevel <= params.dotDisplayRatio;
                     edgeInternalDots.push({ pos: uv, visible: isVis }); 
                 }
             }
@@ -898,7 +1066,8 @@
             for (let i = 0; i < mainCornerDots.length; i++) {
                 m1.compose(mainCornerDots[i].pos, new THREE.Quaternion(), mainCornerDots[i].visible ? new THREE.Vector3(1,1,1) : new THREE.Vector3(0,0,0));
                 instancedCorners.setMatrixAt(i, m1); 
-                instancedCorners.setColorAt(i, new THREE.Color(getPaletteColorHex(i + 5000)));
+                const cSeed = getStableRandomColorSeed(mainCornerDots[i].pos.x, mainCornerDots[i].pos.y, mainCornerDots[i].pos.z);
+                instancedCorners.setColorAt(i, new THREE.Color(getPaletteColorHex(cSeed)));
             }
             generated3DGroup.add(instancedCorners);
 
@@ -908,7 +1077,8 @@
                 for (let i = 0; i < edgeInternalDots.length; i++) {
                     m2.compose(edgeInternalDots[i].pos, new THREE.Quaternion(), edgeInternalDots[i].visible ? new THREE.Vector3(1,1,1) : new THREE.Vector3(0,0,0));
                     instancedEdges.setMatrixAt(i, m2); 
-                    instancedEdges.setColorAt(i, new THREE.Color(getPaletteColorHex(i + 10000)));
+                    const cSeed = getStableRandomColorSeed(edgeInternalDots[i].pos.x, edgeInternalDots[i].pos.y, edgeInternalDots[i].pos.z);
+                    instancedEdges.setColorAt(i, new THREE.Color(getPaletteColorHex(cSeed)));
                 }
                 generated3DGroup.add(instancedEdges);
             }
@@ -981,6 +1151,7 @@
             generated3DGroup.visible = false; growthGroup.visible = true; controls.autoRotate = false; 
             
             const solid = generated3DGroup.getObjectByName("SolidMesh"); if (solid) { solid.material.transparent = true; solid.material.opacity = 0; }
+            if (outlinePass) outlinePass.selectedObjects = []; 
             const wire = generated3DGroup.getObjectByName("WireframeMesh"); if (wire) { wire.material.transparent = true; wire.material.opacity = 0; }
             const mainAnchors = generated3DGroup.getObjectByName("SphereAnchorsMain"); if (mainAnchors) { mainAnchors.material.transparent = true; mainAnchors.material.opacity = 0; }
             const edgeAnchors = generated3DGroup.getObjectByName("SphereAnchorsEdges"); if (edgeAnchors) { edgeAnchors.material.transparent = true; edgeAnchors.material.opacity = 0; }
@@ -995,11 +1166,17 @@
                 const mainAnchors = generated3DGroup.getObjectByName("SphereAnchorsMain");
                 const edgeAnchors = generated3DGroup.getObjectByName("SphereAnchorsEdges");
                 if (mainAnchors) {
-                    for (let i = 0; i < mainAnchors.count; i++) mainAnchors.setColorAt(i, new THREE.Color(getPaletteColorHex(i + 5000)));
+                    for (let i = 0; i < mainAnchors.count; i++) {
+                        const pt = mainCornerDotsCache[i].pos;
+                        mainAnchors.setColorAt(i, new THREE.Color(getPaletteColorHex(getStableRandomColorSeed(pt.x, pt.y, pt.z))));
+                    }
                     mainAnchors.instanceColor.needsUpdate = true;
                 }
                 if (edgeAnchors) {
-                    for (let i = 0; i < edgeAnchors.count; i++) edgeAnchors.setColorAt(i, new THREE.Color(getPaletteColorHex(i + 10000)));
+                    for (let i = 0; i < edgeAnchors.count; i++) {
+                        const pt = edgeInternalDotsCache[i].pos;
+                        edgeAnchors.setColorAt(i, new THREE.Color(getPaletteColorHex(getStableRandomColorSeed(pt.x, pt.y, pt.z))));
+                    }
                     edgeAnchors.instanceColor.needsUpdate = true;
                 }
             }
@@ -1012,19 +1189,18 @@
         function resize() {
             camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); 
             renderer.setSize(window.innerWidth, window.innerHeight); applyView2D();
+            composer.setSize(window.innerWidth, window.innerHeight);
             
             const wire = generated3DGroup.getObjectByName("WireframeMesh");
             if (wire && wire.material.resolution) {
                 wire.material.resolution.set(window.innerWidth, window.innerHeight);
             }
         }
-        window.addEventListener('resize', resize); resize();
-        updateBackground();
-
+        
         // ==========================================
         // GUI Panel Build
         // ==========================================
-        const gui = new GUI({ title: 'Strict Dash Console' });
+        const gui = new GUI({ title: 'Strict CAD Console' });
 
         const folder1 = gui.addFolder('1. 2D Path Drawing & Import');
         folder1.add(params, 'uploadSVG').name('📂 Import External SVG');
@@ -1048,6 +1224,18 @@
 
         const folder4 = gui.addFolder('4. Appearance & Density');
         folder4.add(params, 'viewMode', ['Full color', 'Wireframe (See-through)', 'Wireframe (Solid back)', 'Dots + Wireframe (See-through)', 'Dots + Wireframe (Solid back)', 'Only Dots']).name('View Mode').onChange(applyViewMode);
+        
+        folder4.add(params, 'showSilhouette').name('👤 Dynamic Silhouette').onChange(applyViewMode);
+        folder4.add(params, 'silhouetteThickness', 1.0, 10.0, 0.5).name('👤 Silhouette Thickness').onChange(() => {
+            if(outlinePass) outlinePass.edgeThickness = params.silhouetteThickness;
+        });
+        folder4.addColor(params, 'silhouetteColor').name('👤 Silhouette Color').onChange(() => {
+            if(outlinePass) {
+                outlinePass.visibleEdgeColor.set(params.silhouetteColor);
+                outlinePass.hiddenEdgeColor.set(params.silhouetteColor);
+            }
+        });
+
         folder4.add(params, 'lineThickness', 1.0, 15.0, 0.5).name('✏️ Line Thickness').onChange(() => { 
             const wire = generated3DGroup.getObjectByName("WireframeMesh");
             if (wire && wire.material.linewidth !== undefined) wire.material.linewidth = params.lineThickness;
@@ -1099,6 +1287,9 @@
             params.colorPalette.forEach((color, index) => { paletteFolder.addColor(params.colorPalette, index).name(`Color ${index + 1}`).onChange(updateDotColors); });
         }
         buildPaletteGUI(); 
+
+        window.addEventListener('resize', resize); resize();
+        updateBackground();
 
         function animate() {
             requestAnimationFrame(animate);
@@ -1302,7 +1493,11 @@
                 if (!params.scatterEffect || currentScatterValue === 0) if(!params.growthMode) applyViewMode();
             }
 
-            renderer.render(scene, camera);
+            if (params.showSilhouette && params.generate3D !== '2D SVG Mode') {
+                composer.render();
+            } else {
+                renderer.render(scene, camera);
+            }
         }
         animate();
     </script>
